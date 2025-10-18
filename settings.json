@@ -1,0 +1,22 @@
+{
+  "company": {
+    "name": "Roopkala Jewellers",
+    "address_line1": "123 Main Street",
+    "address_line2": "Jewellery Market, City - 400001",
+    "phone": "+91 98765 43210",
+    "email": "info@roopkalajewellers.com",
+    "gstin": "27AAAAA0000A1Z5"
+  },
+  "tax": {
+    "cgst_rate": "1.5",
+    "sgst_rate": "1.5"
+  },
+  "invoice": {
+    "prefix": "RKJ",
+    "starting_number": 1001
+  },
+  "precision": {
+    "quantity_decimals": 3,
+    "money_decimals": 2
+  }
+}
