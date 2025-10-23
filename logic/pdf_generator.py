@@ -310,9 +310,9 @@ class InvoicePDFGenerator:
 
         # Totals rows
         subtotal = invoice_data.get("subtotal", "0")
-        cgst = invoice_data.get("cgst", "0")
-        sgst = invoice_data.get("sgst", "0")
-        final_total = invoice_data.get("final_total", "0")
+        cgst = invoice_data.get("cgst_amount", "0")  # Fixed key
+        sgst = invoice_data.get("sgst_amount", "0")  # Fixed key
+        final_total = invoice_data.get("total_amount", "0")  # Fixed key
         rounded_off = invoice_data.get("rounded_off", "0")
 
         table_data.append(["", "", "", "TOTAL", "", f"₹ {float(subtotal):.2f}"])

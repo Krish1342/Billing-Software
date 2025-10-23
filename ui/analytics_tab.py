@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 import csv
 from typing import Dict, List
 
-from unified_database import UnifiedDatabaseManager
+from logic.database_manager import UnifiedDatabaseManager
 
 
 class AnalyticsTab(QWidget):
@@ -339,11 +339,15 @@ class AnalyticsTab(QWidget):
         self.load_low_stock_data()
         self.load_category_data()
 
+    def refresh_data(self):
+        """Refresh analytics data (alias for load_data)."""
+        self.load_data()
+
     def load_sales_data(self):
         """Load sales analytics data."""
         try:
-            from_date = self.from_date_edit.date().toString(Qt.ISODate)
-            to_date = self.to_date_edit.date().toString(Qt.ISODate)
+            from_date = self.from_date_edit.date().toString("yyyy-MM-dd")
+            to_date = self.to_date_edit.date().toString("yyyy-MM-dd")
 
             # Get sales summary
             summary = self.db.get_sales_summary(from_date, to_date)
@@ -516,8 +520,8 @@ class AnalyticsTab(QWidget):
         """Preview the selected report."""
         try:
             report_type = self.report_type_combo.currentText()
-            from_date = self.report_from_date.date().toString(Qt.ISODate)
-            to_date = self.report_to_date.date().toString(Qt.ISODate)
+            from_date = self.report_from_date.date().toString("yyyy-MM-dd")
+            to_date = self.report_to_date.date().toString("yyyy-MM-dd")
 
             report_text = f"=== {report_type} ===\n"
             report_text += f"Period: {from_date} to {to_date}\n"
@@ -580,8 +584,8 @@ class AnalyticsTab(QWidget):
         """Export the current report to CSV."""
         try:
             report_type = self.report_type_combo.currentText()
-            from_date = self.report_from_date.date().toString(Qt.ISODate)
-            to_date = self.report_to_date.date().toString(Qt.ISODate)
+            from_date = self.report_from_date.date().toString("yyyy-MM-dd")
+            to_date = self.report_to_date.date().toString("yyyy-MM-dd")
 
             filename, _ = QFileDialog.getSaveFileName(
                 self,

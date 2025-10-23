@@ -29,7 +29,7 @@ from PyQt5.QtGui import QFont
 import json
 import os
 
-from unified_database import UnifiedDatabaseManager
+from logic.database_manager import UnifiedDatabaseManager
 
 
 class SettingsTab(QWidget):

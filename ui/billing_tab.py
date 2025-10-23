@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QComboBox,
+    QCheckBox,
     QDateEdit,
     QTextEdit,
     QGroupBox,
@@ -28,7 +29,6 @@ from PyQt5.QtWidgets import (
     QCompleter,
     QAbstractItemView,
     QFrame,
-    QCheckBox,
 )
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QStringListModel
 from PyQt5.QtGui import QFont, QDoubleValidator, QIntValidator
@@ -37,9 +37,9 @@ import json
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from unified_database import UnifiedDatabaseManager
-from calc import create_calculator, CalculationError
-from pdf_generator import InvoicePDFGenerator
+from logic.database_manager import UnifiedDatabaseManager
+from logic.calculator import create_calculator, CalculationError
+from logic.pdf_generator import InvoicePDFGenerator
 
 
 class BillingTab(QWidget):
@@ -60,6 +60,8 @@ class BillingTab(QWidget):
         self.line_items = []
         self.customers = []
         self.products = []
+        self.categories = []
+        self.products_by_category = {}
 
         # Setup UI
         self.init_ui()
@@ -137,54 +139,74 @@ class BillingTab(QWidget):
         add_form.setFrameStyle(QFrame.StyledPanel)
         add_layout = QGridLayout(add_form)
 
-        # Product selection
-        add_layout.addWidget(QLabel("Product:"), 0, 0)
-        self.product_combo = QComboBox()
-        self.product_combo.setEditable(True)
-        self.product_combo.currentTextChanged.connect(self.on_product_selected)
-        add_layout.addWidget(self.product_combo, 0, 1)
+        # Row 0: Custom order toggle
+        self.custom_order_check = QCheckBox("Custom Order (not in stock)")
+        self.custom_order_check.setToolTip(
+            "Tick for made-to-order items not present in inventory"
+        )
+        self.custom_order_check.toggled.connect(self.on_custom_order_toggled)
+        add_layout.addWidget(self.custom_order_check, 0, 0, 1, 4)
 
-        # Description
-        add_layout.addWidget(QLabel("Description:"), 0, 2)
+        # Row 1: Category and Item (weight) or Weight (g) for custom
+        add_layout.addWidget(QLabel("Category:"), 1, 0)
+        self.category_combo = QComboBox()
+        self.category_combo.currentIndexChanged.connect(self.on_category_selected)
+        self.category_combo.setToolTip("Choose a category first")
+        add_layout.addWidget(self.category_combo, 1, 1)
+
+        self.item_label = QLabel("Select Weight:")
+        add_layout.addWidget(self.item_label, 1, 2)
+        self.item_combo = QComboBox()
+        self.item_combo.setEditable(False)
+        self.item_combo.currentIndexChanged.connect(self.on_item_selected)
+        self.item_combo.setToolTip("Pick an item by its weight")
+        add_layout.addWidget(self.item_combo, 1, 3)
+
+        # Weight (g)
+        self.weight_label = QLabel("Weight (g):")
+        self.net_weight_spin = QDoubleSpinBox()
+        self.net_weight_spin.setDecimals(3)
+        self.net_weight_spin.setRange(0.001, 999999.999)
+        self.net_weight_spin.setValue(1.000)
+        self.net_weight_spin.setToolTip("Enter the net weight in grams")
+        # Initially hide weight for non-custom flow; will be shown for custom
+        self.weight_label.setVisible(False)
+        self.net_weight_spin.setVisible(False)
+        add_layout.addWidget(self.weight_label, 1, 2)
+        add_layout.addWidget(self.net_weight_spin, 1, 3)
+
+        # Row 2: Description (spans full width)
+        add_layout.addWidget(QLabel("Description:"), 2, 0)
         self.description_edit = QLineEdit()
         self.description_edit.setPlaceholderText("Item description")
-        add_layout.addWidget(self.description_edit, 0, 3)
+        add_layout.addWidget(self.description_edit, 2, 1, 1, 3)
 
-        # HSN Code
-        add_layout.addWidget(QLabel("HSN Code:"), 1, 0)
+        # Row 3: HSN
+        add_layout.addWidget(QLabel("HSN Code:"), 3, 0)
         self.hsn_edit = QLineEdit()
         self.hsn_edit.setPlaceholderText("HSN/SAC Code")
-        add_layout.addWidget(self.hsn_edit, 1, 1)
+        add_layout.addWidget(self.hsn_edit, 3, 1)
 
-        # Quantity
-        add_layout.addWidget(QLabel("Quantity:"), 1, 2)
-        self.quantity_spin = QDoubleSpinBox()
-        self.quantity_spin.setDecimals(3)
-        self.quantity_spin.setRange(0.001, 999999.999)
-        self.quantity_spin.setValue(1.0)
-        self.quantity_spin.valueChanged.connect(self.calculate_line_total)
-        add_layout.addWidget(self.quantity_spin, 1, 3)
-
-        # Rate
-        add_layout.addWidget(QLabel("Rate:"), 2, 0)
+        # Row 4: Rate and Amount
+        add_layout.addWidget(QLabel("Rate:"), 4, 0)
         self.rate_spin = QDoubleSpinBox()
         self.rate_spin.setDecimals(2)
         self.rate_spin.setRange(0.0, 999999.99)
         self.rate_spin.valueChanged.connect(self.calculate_line_total)
-        add_layout.addWidget(self.rate_spin, 2, 1)
+        add_layout.addWidget(self.rate_spin, 4, 1)
 
         # Amount
-        add_layout.addWidget(QLabel("Amount:"), 2, 2)
+        add_layout.addWidget(QLabel("Amount:"), 4, 2)
         self.amount_spin = QDoubleSpinBox()
         self.amount_spin.setDecimals(2)
         self.amount_spin.setRange(0.0, 999999.99)
         self.amount_spin.valueChanged.connect(self.calculate_from_amount)
-        add_layout.addWidget(self.amount_spin, 2, 3)
+        add_layout.addWidget(self.amount_spin, 4, 3)
 
         # Add button
         self.add_item_btn = QPushButton("Add Item")
         self.add_item_btn.clicked.connect(self.add_line_item)
-        add_layout.addWidget(self.add_item_btn, 3, 0, 1, 4)
+        add_layout.addWidget(self.add_item_btn, 5, 0, 1, 4)
 
         group_layout.addWidget(add_form)
 
@@ -195,10 +217,10 @@ class BillingTab(QWidget):
             [
                 "Description",
                 "HSN Code",
-                "Quantity",
+                "Weight (g)",
                 "Rate",
                 "Amount",
-                "Stock Available",
+                "Category Stock",
                 "Actions",
             ]
         )
@@ -207,7 +229,7 @@ class BillingTab(QWidget):
         header = self.line_items_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Description
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # HSN
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Quantity
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Weight
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Rate
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Amount
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Stock
@@ -264,27 +286,16 @@ class BillingTab(QWidget):
 
         # Override Total functionality
         group_layout.addWidget(QLabel("Override Total:"), 5, 0)
-        override_layout = QHBoxLayout()
-
-        self.override_total_checkbox = QCheckBox("Enable")
-        self.override_total_checkbox.stateChanged.connect(
-            self.on_override_total_changed
-        )
-        override_layout.addWidget(self.override_total_checkbox)
 
         self.override_total_spin = QDoubleSpinBox()
         self.override_total_spin.setRange(0.0, 999999.99)
         self.override_total_spin.setDecimals(2)
         self.override_total_spin.setPrefix("₹")
-        self.override_total_spin.setEnabled(False)
+        self.override_total_spin.setEnabled(True)  # Always enabled
         self.override_total_spin.valueChanged.connect(
             self.on_override_total_spin_changed
         )
-        override_layout.addWidget(self.override_total_spin)
-
-        override_widget = QWidget()
-        override_widget.setLayout(override_layout)
-        group_layout.addWidget(override_widget, 5, 1)
+        group_layout.addWidget(self.override_total_spin, 5, 1)
 
         # Final total (after rounding or override)
         group_layout.addWidget(QLabel("Final Total:"), 6, 0)
@@ -348,61 +359,170 @@ class BillingTab(QWidget):
             customer_completer = QCompleter(customer_names)
             self.customer_name_edit.setCompleter(customer_completer)
 
-            # Load products
+            # Load categories and products
+            self.categories = self.db.get_categories()
             self.products = self.db.get_products()
-            # Do not show stock quantity in the selector; name is effectively category
-            product_items = ["Select Product"] + [
-                f"{p['name']} - {p['description'] or 'No description'}"
-                for p in self.products
-            ]
-            self.product_combo.clear()
-            self.product_combo.addItems(product_items)
+
+            # Build products_by_category mapping
+            self.products_by_category = {}
+            for p in self.products:
+                cid = p.get("category_id")
+                if cid is None:
+                    continue
+                self.products_by_category.setdefault(cid, []).append(p)
+
+            # Fill category combo
+            self.category_combo.blockSignals(True)
+            self.category_combo.clear()
+            self.category_combo.addItem("Select Category", None)
+            for c in self.categories:
+                self.category_combo.addItem(c["name"], c["id"])
+            self.category_combo.blockSignals(False)
+
+            # Reset item combo
+            self.populate_items_for_category(None)
 
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error loading data: {str(e)}")
 
-    def on_product_selected(self, text):
-        """Handle product selection."""
-        if text == "Select Product" or not text:
+    def refresh_products(self):
+        """Refresh categories/items and cached products."""
+        try:
+            # Clear all cached data first
+            self.products = []
+            self.categories = []
+            self.products_by_category = {}
+
+            # Reload products and categories from database
+            self.categories = self.db.get_categories()
+            self.products = self.db.get_products()
+
+            # Rebuild mapping
+            for p in self.products:
+                cid = p.get("category_id")
+                if cid is None:
+                    continue
+                self.products_by_category.setdefault(cid, []).append(p)
+
+            # Refresh category combo, keep selection if possible
+            current_cid = (
+                self.category_combo.currentData()
+                if hasattr(self, "category_combo")
+                else None
+            )
+            self.category_combo.blockSignals(True)
+            self.category_combo.clear()
+            self.category_combo.addItem("Select Category", None)
+            for c in self.categories:
+                self.category_combo.addItem(c["name"], c["id"])
+            # Try to restore previous selection
+            if current_cid:
+                index = self.category_combo.findData(current_cid)
+                if index >= 0:
+                    self.category_combo.setCurrentIndex(index)
+            self.category_combo.blockSignals(False)
+
+            # Clear and repopulate items for current category
+            self.populate_items_for_category(self.category_combo.currentData())
+
+        except Exception as e:
+            QMessageBox.warning(self, "Warning", f"Error refreshing products: {str(e)}")
+
+    def populate_items_for_category(self, category_id: Optional[int]):
+        """Populate the item (weight) combo for a given category."""
+        # Helper creates friendly label and stores product_id in item data
+        self.item_combo.blockSignals(True)
+        self.item_combo.clear()
+        self.item_combo.addItem("Select Item", None)
+        if not category_id:
+            self.item_combo.setEnabled(False)
+            self.item_combo.blockSignals(False)
             return
 
+        # Get all items in category (deleted products are already removed from DB)
+        items = self.products_by_category.get(category_id, [])
+        # Sort by category_item_id for clarity
+        items.sort(key=lambda x: x.get("category_item_id", 0) or 0)
+        for p in items:
+            cat_id = p.get(
+                "category_item_id", p["id"]
+            )  # Fallback to global ID if no category_item_id
+            label = f"#{cat_id} — Net {float(p.get('net_weight',0)):.3f} g (Gross {float(p.get('gross_weight',0)):.3f} g)"
+            self.item_combo.addItem(label, p["id"])
+        self.item_combo.setEnabled(True)
+        self.item_combo.setToolTip(
+            "Pick the exact item by weight. Only available stock is listed."
+        )
+        self.item_combo.blockSignals(False)
+
+    def on_category_selected(self, index: int):
+        """When category changes, populate items list and reset fields."""
+        category_id = self.category_combo.itemData(index)
+        self.populate_items_for_category(category_id)
+        # Reset selection-dependent fields
+        self.description_edit.clear()
+        self.hsn_edit.clear()
+        self.rate_spin.setValue(0.0)
+        self.amount_spin.setValue(0.0)
+        self.net_weight_spin.setValue(1.000)
+
+    def on_item_selected(self, index: int):
+        """Handle item (weight) selection."""
+        product_id = self.item_combo.itemData(index)
+        if not product_id:
+            return
         try:
-            # Find selected product
-            for product in self.products:
-                product_text = (
-                    f"{product['name']} - {product['description'] or 'No description'}"
-                )
-                if product_text == text:
-                    # Fill in product details
-                    self.description_edit.setText(
-                        product["description"] or product["name"]
-                    )
-                    self.hsn_edit.setText(product.get("hsn_code", ""))
-                    self.rate_spin.setValue(float(product["unit_price"]))
+            # Find the product
+            product = next((p for p in self.products if p["id"] == product_id), None)
+            if not product:
+                return
 
-                    # Show available stock
-                    stock_qty = product["quantity"]
-                    if stock_qty <= 0:
-                        QMessageBox.warning(
-                            self,
-                            "No Stock",
-                            f"Product '{product['name']}' is out of stock!",
-                        )
-                    elif stock_qty <= 5:
-                        QMessageBox.information(
-                            self,
-                            "Low Stock",
-                            f"Product '{product['name']}' has only {stock_qty} units in stock.",
-                        )
+            # Fill description and HSN
+            category_name = next(
+                (
+                    c["name"]
+                    for c in self.categories
+                    if c["id"] == product.get("category_id")
+                ),
+                product.get("name", "Item"),
+            )
+            net_w = float(product.get("net_weight", 0))
+            self.description_edit.setText(f"{category_name} - {net_w:.3f} g")
+            self.hsn_edit.setText(product.get("hsn_code", ""))
 
-                    break
+            # Rate is per gram; set weight and disable editing for stock items
+            unit_price = float(product.get("unit_price", 0.0))
+            self.rate_spin.setValue(unit_price)
+            self.net_weight_spin.setValue(net_w)
+            self.net_weight_spin.setEnabled(False)
+            self.calculate_line_total()
+
         except Exception as e:
-            QMessageBox.warning(self, "Warning", f"Error selecting product: {str(e)}")
+            QMessageBox.warning(self, "Warning", f"Error selecting item: {str(e)}")
+
+    def on_custom_order_toggled(self, checked: bool):
+        """Toggle between inventory item and custom order item."""
+        # Toggle visibility of selectors
+        self.item_label.setVisible(not checked)
+        self.item_combo.setVisible(not checked)
+        self.weight_label.setVisible(checked)
+        self.net_weight_spin.setVisible(checked)
+        # Reset some fields
+        self.net_weight_spin.setValue(1.000)
+        self.rate_spin.setValue(0.0)
+        self.amount_spin.setValue(0.0)
+        if checked:
+            # For custom orders, disable item selection and clear description for user
+            self.description_edit.setText("")
+            self.net_weight_spin.setEnabled(True)
+        else:
+            # For stock items, weight is set by selection and not editable
+            self.net_weight_spin.setEnabled(False)
 
     def calculate_line_total(self):
-        """Calculate line total when quantity or rate changes."""
+        """Calculate line total when weight or rate changes."""
         try:
-            quantity = Decimal(str(self.quantity_spin.value()))
+            quantity = Decimal(str(self.net_weight_spin.value()))
             rate = Decimal(str(self.rate_spin.value()))
             amount = quantity * rate
 
@@ -417,7 +537,7 @@ class BillingTab(QWidget):
     def calculate_from_amount(self):
         """Calculate rate when amount changes."""
         try:
-            quantity = Decimal(str(self.quantity_spin.value()))
+            quantity = Decimal(str(self.net_weight_spin.value()))
             amount = Decimal(str(self.amount_spin.value()))
 
             if quantity > 0:
@@ -440,13 +560,13 @@ class BillingTab(QWidget):
                 QMessageBox.warning(self, "Warning", "Please enter item description.")
                 return
 
-            quantity = self.quantity_spin.value()
+            weight = self.net_weight_spin.value()
             rate = self.rate_spin.value()
             amount = self.amount_spin.value()
 
-            if quantity <= 0:
+            if weight <= 0:
                 QMessageBox.warning(
-                    self, "Warning", "Quantity must be greater than zero."
+                    self, "Warning", "Weight must be greater than zero."
                 )
                 return
 
@@ -457,25 +577,43 @@ class BillingTab(QWidget):
             # Check stock if product selected
             product_id = None
             stock_available = "N/A"
-            selected_product_text = self.product_combo.currentText()
-
-            if selected_product_text != "Select Product":
-                for product in self.products:
-                    product_text = f"{product['name']} - {product['description'] or 'No description'}"
-                    if product_text == selected_product_text:
-                        product_id = product["id"]
-                        # Quantity tracking disabled in this workflow
-                        stock_available = "N/A"
-                        break
+            # Read selected product or custom order
+            if self.custom_order_check.isChecked():
+                product_id = None
+                stock_available = "Custom"
+                # Auto-fill description if empty
+                if not description:
+                    # Use category name and entered weight
+                    cid = self.category_combo.currentData()
+                    category_name = next(
+                        (c["name"] for c in self.categories if c["id"] == cid), "Item"
+                    )
+                    weight = float(self.net_weight_spin.value())
+                    description = f"{category_name} - {weight:.3f} g (Custom Order)"
+            else:
+                selected_product_index = self.item_combo.currentIndex()
+                if selected_product_index > 0:
+                    product_id = self.item_combo.itemData(selected_product_index)
+                    # Count total items in this category
+                    product = next(
+                        (p for p in self.products if p["id"] == product_id), None
+                    )
+                    if product and product.get("category_id"):
+                        category_items_count = len(
+                            self.products_by_category.get(product["category_id"], [])
+                        )
+                        stock_available = f"{category_items_count} available"
+                    else:
+                        stock_available = "Yes"
 
             # Create line item
             line_item = {
                 "product_id": product_id,
                 "description": description,
                 "hsn_code": self.hsn_edit.text().strip(),
-                "quantity": quantity,
-                "rate": rate,
-                "amount": amount,
+                "quantity": float(weight),
+                "rate": float(rate),
+                "amount": float(amount),
             }
 
             self.line_items.append(line_item)
@@ -488,7 +626,7 @@ class BillingTab(QWidget):
             self.line_items_table.setItem(
                 row, 1, QTableWidgetItem(line_item["hsn_code"])
             )
-            self.line_items_table.setItem(row, 2, QTableWidgetItem(f"{quantity:.3f}"))
+            self.line_items_table.setItem(row, 2, QTableWidgetItem(f"{weight:.3f}"))
             self.line_items_table.setItem(row, 3, QTableWidgetItem(f"₹{rate:.2f}"))
             self.line_items_table.setItem(row, 4, QTableWidgetItem(f"₹{amount:.2f}"))
             self.line_items_table.setItem(row, 5, QTableWidgetItem(stock_available))
@@ -502,12 +640,8 @@ class BillingTab(QWidget):
             self.clear_line_item_form()
 
             # Update totals
-            if (
-                hasattr(self, "override_total_checkbox")
-                and self.override_total_checkbox.isChecked()
-            ):
-                # Reallocate amounts whenever a new item is added while override is active
-                self.apply_override_allocation()
+            # Override total is always enabled, so reallocate amounts
+            self.apply_override_allocation()
             self.update_totals()
 
         except Exception as e:
@@ -535,10 +669,14 @@ class BillingTab(QWidget):
 
     def clear_line_item_form(self):
         """Clear the line item form."""
-        self.product_combo.setCurrentIndex(0)
+        self.category_combo.setCurrentIndex(0)
+        self.item_combo.clear()
+        self.item_combo.addItem("Select Item", None)
+        self.item_combo.setEnabled(False)
+        self.custom_order_check.setChecked(False)
+        self.net_weight_spin.setValue(1.000)
         self.description_edit.clear()
         self.hsn_edit.clear()
-        self.quantity_spin.setValue(1.0)
         self.rate_spin.setValue(0.0)
         self.amount_spin.setValue(0.0)
 
@@ -557,10 +695,8 @@ class BillingTab(QWidget):
 
             # Calculate totals using the calculator
             user_total = None
-            if (
-                hasattr(self, "override_total_checkbox")
-                and self.override_total_checkbox.isChecked()
-            ):
+            # Override is always enabled, use value if > 0
+            if self.override_total_spin.value() > 0:
                 user_total = Decimal(str(self.override_total_spin.value()))
             totals = self.calculator.calculate_invoice_totals(
                 self.line_items, user_total_inclusive=user_total
@@ -574,15 +710,12 @@ class BillingTab(QWidget):
 
             # Handle override total
             if hasattr(self, "final_total_label"):
-                if (
-                    hasattr(self, "override_total_checkbox")
-                    and self.override_total_checkbox.isChecked()
-                ):
-                    # Use override value
-                    final_total = self.override_total_spin.value()
+                # Always use override value since override is always enabled
+                final_total = self.override_total_spin.value()
+                if final_total > 0:
                     self.final_total_label.setText(f"₹{final_total:.2f}")
                 else:
-                    # Use calculated total
+                    # Use calculated total if override is 0
                     self.final_total_label.setText(f"₹{totals['final_total']:.2f}")
 
         except Exception as e:
@@ -596,22 +729,27 @@ class BillingTab(QWidget):
     def apply_override_allocation(self):
         """Redistribute per-item amounts and rates by weight based on override total."""
         try:
-            if (
-                not hasattr(self, "override_total_checkbox")
-                or not self.override_total_checkbox.isChecked()
-            ):
-                return
-
+            # Override is always enabled now
             if not self.line_items:
                 return
 
             user_total = Decimal(str(self.override_total_spin.value()))
+            if user_total <= 0:
+                return  # Don't apply allocation if override total is 0
+
             updated_items = self.calculator.allocate_amounts_by_weight(
                 self.line_items, user_total
             )
 
             # Replace and refresh table
             self.line_items = updated_items
+
+            # Ensure all values are float (not Decimal) for database compatibility
+            for item in self.line_items:
+                item["quantity"] = float(item["quantity"])
+                item["rate"] = float(item["rate"])
+                item["amount"] = float(item["amount"])
+
             for row, item in enumerate(self.line_items):
                 if row < self.line_items_table.rowCount():
                     self.line_items_table.setItem(
@@ -625,16 +763,6 @@ class BillingTab(QWidget):
             QMessageBox.warning(
                 self, "Override", f"Could not apply override allocation: {str(e)}"
             )
-
-    def on_override_total_changed(self, state):
-        """Handle override total checkbox change."""
-        if hasattr(self, "override_total_spin"):
-            self.override_total_spin.setEnabled(state == 2)  # 2 = checked
-            if state == 2:  # If enabled, set current total as default
-                if hasattr(self, "line_items") and self.line_items:
-                    totals = self.calculator.calculate_invoice_totals(self.line_items)
-                    self.override_total_spin.setValue(float(totals["final_total"]))
-            self.update_totals()
 
     def calculate_totals(self):
         """Recalculate totals - alias for update_totals for compatibility."""
@@ -660,11 +788,8 @@ class BillingTab(QWidget):
         self.customer_phone_edit.clear()
         self.customer_gstin_edit.clear()
 
-        # Reset override total
-        if hasattr(self, "override_total_checkbox"):
-            self.override_total_checkbox.setChecked(False)
-            self.override_total_spin.setEnabled(False)
-            self.override_total_spin.setValue(0.0)
+        # Reset override total (always enabled, just reset value)
+        self.override_total_spin.setValue(0.0)
 
         self.clear_line_item_form()
         self.update_totals()
@@ -689,7 +814,9 @@ class BillingTab(QWidget):
                     "customer_name": self.customer_name_edit.text(),
                     "customer_phone": self.customer_phone_edit.text(),
                     "customer_gstin": self.customer_gstin_edit.text(),
-                    "invoice_date": self.invoice_date_edit.date().toString(Qt.ISODate),
+                    "invoice_date": self.invoice_date_edit.date().toString(
+                        "yyyy-MM-dd"
+                    ),
                     "line_items": self.line_items,
                 }
 
@@ -715,11 +842,8 @@ class BillingTab(QWidget):
                 )
                 return
 
-            # If override is active, reallocate amounts by weight first
-            if (
-                hasattr(self, "override_total_checkbox")
-                and self.override_total_checkbox.isChecked()
-            ):
+            # Override is always active, reallocate amounts by weight if override > 0
+            if self.override_total_spin.value() > 0:
                 self.apply_override_allocation()
 
             # Calculate totals
@@ -727,10 +851,7 @@ class BillingTab(QWidget):
 
             # Check if total is overridden
             final_total = float(totals["final_total"])
-            if (
-                hasattr(self, "override_total_checkbox")
-                and self.override_total_checkbox.isChecked()
-            ):
+            if self.override_total_spin.value() > 0:
                 final_total = self.override_total_spin.value()
                 # Recalculate rounding for override total
                 totals["rounded_off"] = final_total - (
@@ -745,7 +866,7 @@ class BillingTab(QWidget):
                 "customer_name": self.customer_name_edit.text().strip(),
                 "customer_phone": self.customer_phone_edit.text().strip(),
                 "customer_gstin": self.customer_gstin_edit.text().strip(),
-                "invoice_date": self.invoice_date_edit.date().toString(Qt.ISODate),
+                "invoice_date": self.invoice_date_edit.date().toString("yyyy-MM-dd"),
                 "subtotal": float(totals["subtotal"]),
                 "cgst_amount": float(totals["cgst"]),
                 "sgst_amount": float(totals["sgst"]),

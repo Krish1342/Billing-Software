@@ -1,24 +1,38 @@
-# Roopkala Jewellers Billing System
+# Unified Jewelry Management System
 
-A professional desktop billing application built with Python 3.10+, Tkinter, and SQLite designed specifically for Roopkala Jewellers. This system handles precise monetary calculations using `decimal.Decimal`, supports GST-inclusive billing, and generates professional PDF invoices.
+A comprehensive jewelry shop management system with billing, inventory management, and analytics built with PyQt5.
 
 ## Features
 
-### Core Features
-- **Desktop GUI Application** - Built with Tkinter for a native desktop experience
-- **Precise Money Calculations** - Uses `decimal.Decimal` internally to avoid floating-point errors
-- **Flexible Input System** - Enter any 2 of: Quantity, Rate, Amount, or Total Inclusive
-- **GST Support** - Automatic CGST (1.5%) and SGST (1.5%) calculation (configurable)
-- **Rounding Control** - Proper rounding with ROUND_HALF_UP, rounded-off row for total adjustments
-- **SQLite Database** - Persistent storage for all invoices
-- **PDF Export** - Professional A4 invoice generation using ReportLab
-- **No Authentication** - Designed for trusted admin users only
+### 🧾 Billing & Invoicing
 
-### Technical Highlights
-- **Decimal Precision**: All monetary values use `Decimal` to ensure accuracy
-- **Flexible Calculations**: Provide any two parameters and the system calculates the rest
-- **Configurable Settings**: Easy-to-edit JSON file for company info and tax rates
-- **Reusable Calculator Module**: `calc.py` can be used independently
+- Professional invoice generation with GST calculations
+- Automatic stock deduction on invoice creation
+- Customer management with GSTIN support
+- PDF invoice generation
+- Real-time calculations with high precision
+
+### 📦 Stock Management
+
+- Complete inventory tracking
+- Product categories and suppliers
+- Stock movement history
+- Low stock alerts
+- Bulk import/export capabilities
+
+### 📊 Analytics & Reports
+
+- Sales analytics with visual charts
+- Stock reports and low stock alerts
+- Date-range based reporting
+- Export functionality for reports
+
+### ⚙️ Settings & Configuration
+
+- Company information management
+- Tax rate configuration
+- Database backup and restore
+- Customizable invoice settings
 - **Comprehensive Tests**: Unit tests included for calculation logic
 
 ## Project Structure
@@ -41,25 +55,31 @@ BillingSoftware/
 ## Installation
 
 ### Prerequisites
+
 - Python 3.10 or higher
 - pip (Python package manager)
 
 ### Step 1: Clone or Download
+
 ```bash
 cd BillingSoftware
 ```
 
 ### Step 2: Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 The required packages are:
+
 - `reportlab>=4.0.0` - PDF generation
 - `Pillow>=10.0.0` - Image handling for ReportLab
 
 ### Step 3: Verify Installation
+
 Run the unit tests to ensure everything is working:
+
 ```bash
 python test_calc.py
 ```
@@ -113,11 +133,13 @@ python main.py
 ### Creating an Invoice
 
 1. **Invoice Details Section**
+
    - Invoice number is auto-generated
    - Set the invoice date
    - Enter customer information (name, address, phone, GSTIN)
 
 2. **Adding Line Items**
+
    - Enter item description (required)
    - Enter HSN code (optional)
    - Provide **any 2 of these 3**: Quantity, Rate, or Amount
@@ -125,6 +147,7 @@ python main.py
    - The system automatically calculates the missing value
 
 3. **Viewing Totals**
+
    - Subtotal, CGST, SGST, and Final Total are calculated automatically
    - **Optional**: Use "Override Total" to specify exact final amount
    - System will add "Rounded Off" row to match your target total
@@ -149,6 +172,7 @@ Click "New Invoice" to clear the form and start fresh. Invoice number will auto-
 The calculation module supports flexible input scenarios:
 
 ### Example 1: Quantity + Rate
+
 ```python
 from calc import create_calculator
 
@@ -169,6 +193,7 @@ result = calc.calculate_from_two_params(
 ```
 
 ### Example 2: Quantity + Total Inclusive
+
 ```python
 result = calc.calculate_from_two_params(
     quantity=5,
@@ -183,6 +208,7 @@ result = calc.calculate_from_two_params(
 ```
 
 ### Example 3: With Rounded Off
+
 ```python
 result = calc.calculate_from_two_params(
     quantity=10,
@@ -198,7 +224,7 @@ result = calc.calculate_from_two_params(
 The application uses SQLite for data persistence:
 
 - **Database File**: `roopkala_billing.db` (auto-created)
-- **Tables**: 
+- **Tables**:
   - `invoices` - Invoice headers
   - `line_items` - Invoice line items
 
@@ -225,6 +251,7 @@ python -m pytest test_calc.py -v
 ### Test Coverage
 
 The test suite includes:
+
 - ✅ All calculation scenarios (6 different input combinations)
 - ✅ Decimal precision and rounding
 - ✅ GST calculations
@@ -236,13 +263,17 @@ The test suite includes:
 ## Key Design Decisions
 
 ### 1. No Authentication
+
 Per requirements, no login page or admin settings UI. The app is designed for trusted admin users only. Settings are in `settings.json` which developers can edit directly.
 
 ### 2. Decimal Precision
+
 All monetary calculations use `decimal.Decimal` to avoid floating-point arithmetic errors. This is critical for financial applications.
 
 ### 3. Flexible Input
+
 Users can provide:
+
 - Quantity + Rate (most common)
 - Quantity + Amount
 - Quantity + Total Inclusive
@@ -253,6 +284,7 @@ Users can provide:
 The system calculates missing values automatically.
 
 ### 4. Rounding Strategy
+
 - **Internal calculations**: Full precision with `Decimal`
 - **Display/Storage**: Quantized with ROUND_HALF_UP
   - Quantity: 3 decimals (0.001)
@@ -260,7 +292,9 @@ The system calculates missing values automatically.
 - **Rounded Off**: Adjusts calculated total to match user-specified total
 
 ### 5. GST Inclusive Deduction
+
 When user provides `total_inclusive`, the system:
+
 1. Deducts GST to get taxable amount
 2. Calculates CGST and SGST separately
 3. Adds "Rounded Off" row if needed to match exact total
@@ -268,18 +302,23 @@ When user provides `total_inclusive`, the system:
 ## Troubleshooting
 
 ### Issue: PDF Generation Fails
+
 **Solution**: Ensure ReportLab is installed:
+
 ```bash
 pip install reportlab
 ```
 
 ### Issue: Database Locked
+
 **Solution**: Close all instances of the application. Only one instance should access the database at a time.
 
 ### Issue: Decimal Precision Errors
+
 **Solution**: This shouldn't happen as we use `Decimal`. If you see issues, ensure you're not mixing float arithmetic in custom code.
 
 ### Issue: Invoice Number Already Exists
+
 **Solution**: The system auto-increments invoice numbers. If you manually edit the database, ensure uniqueness.
 
 ## Development
@@ -366,6 +405,7 @@ This project is developed for Roopkala Jewellers. All rights reserved.
 ## Support
 
 For issues or questions about the codebase:
+
 1. Check this README
 2. Review the unit tests for usage examples
 3. Examine the inline code documentation
@@ -374,6 +414,7 @@ For issues or questions about the codebase:
 ## Version History
 
 ### v1.0.0 (2025-10-18)
+
 - Initial release
 - Core billing functionality
 - GST calculations with CGST/SGST

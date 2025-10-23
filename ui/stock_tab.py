@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QDateEdit,
     QTextEdit,
     QGroupBox,
+    QDialog,
     QHeaderView,
     QMessageBox,
     QFileDialog,
@@ -40,7 +41,7 @@ import csv
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from unified_database import UnifiedDatabaseManager
+from logic.database_manager import UnifiedDatabaseManager
 
 
 class StockTab(QWidget):
@@ -93,6 +94,9 @@ class StockTab(QWidget):
 
         # Stock movements tab
         self.create_stock_movements_tab()
+
+        # Inventory summary tab
+        self.create_inventory_summary_tab()
 
         layout.addWidget(self.tab_widget)
 
@@ -170,22 +174,16 @@ class StockTab(QWidget):
             pass
         self.product_quantity_spin.hide()
 
-        add_layout.addWidget(QLabel("Unit Price (₹):"), 3, 2)
-        self.product_price_spin = QDoubleSpinBox()
-        self.product_price_spin.setDecimals(2)
-        self.product_price_spin.setRange(0.0, 999999.99)
-        add_layout.addWidget(self.product_price_spin, 3, 3)
-
-        # Row 4: Supplier and Melting %
-        add_layout.addWidget(QLabel("Supplier:"), 4, 0)
+        # Row 3: Supplier and Melting %
+        add_layout.addWidget(QLabel("Supplier:"), 3, 0)
         self.product_supplier_combo = QComboBox()
-        add_layout.addWidget(self.product_supplier_combo, 4, 1)
+        add_layout.addWidget(self.product_supplier_combo, 3, 1)
 
-        add_layout.addWidget(QLabel("Melting %:"), 4, 2)
+        add_layout.addWidget(QLabel("Melting %:"), 3, 2)
         self.product_melting_spin = QDoubleSpinBox()
         self.product_melting_spin.setDecimals(1)
         self.product_melting_spin.setRange(0.0, 100.0)
-        add_layout.addWidget(self.product_melting_spin, 4, 3)
+        add_layout.addWidget(self.product_melting_spin, 3, 3)
 
         # Add button
         self.add_product_btn = QPushButton("Add Product")
@@ -204,7 +202,7 @@ class StockTab(QWidget):
             }
         """
         )
-        add_layout.addWidget(self.add_product_btn, 5, 0, 1, 4)
+        add_layout.addWidget(self.add_product_btn, 4, 0, 1, 4)
 
         top_splitter.addWidget(add_group)
 
@@ -214,13 +212,11 @@ class StockTab(QWidget):
 
         self.total_products_label = QLabel("Total Products: 0")
         self.total_quantity_label = QLabel("Total Quantity: 0")
-        self.total_value_label = QLabel("Total Value: ₹0.00")
         self.low_stock_label = QLabel("Low Stock Items: 0")
 
         for label in [
             self.total_products_label,
             self.total_quantity_label,
-            self.total_value_label,
             self.low_stock_label,
         ]:
             label.setStyleSheet("font-size: 14px; font-weight: bold; margin: 5px;")
@@ -281,7 +277,6 @@ class StockTab(QWidget):
                 "Gross Weight",
                 "Net Weight",
                 "Quantity",
-                "Unit Price",
                 "Supplier",
                 "Actions",
             ]
@@ -296,9 +291,8 @@ class StockTab(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Gross Weight
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Net Weight
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Quantity
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Price
-        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # Supplier
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)  # Actions
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Supplier
+        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # Actions
 
         self.products_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.products_table.setAlternatingRowColors(True)
@@ -472,6 +466,92 @@ class StockTab(QWidget):
 
         self.tab_widget.addTab(tab, "📊 Stock Movements")
 
+    def create_inventory_summary_tab(self):
+        """Create inventory summary tab with category-wise and total summaries."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Summary header
+        header_group = QGroupBox("📈 Inventory Summary")
+        header_layout = QVBoxLayout(header_group)
+
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh Summary")
+        refresh_btn.clicked.connect(self.load_inventory_summary)
+        refresh_btn.setMaximumWidth(200)
+        header_layout.addWidget(refresh_btn)
+
+        layout.addWidget(header_group)
+
+        # Create splitter for two sections
+        splitter = QSplitter()
+        # splitter.setOrientation(1)  # Vertical orientation - disabled due to import issue
+
+        # Category-wise summary section
+        category_group = QGroupBox("📋 Category-wise Summary")
+        category_layout = QVBoxLayout(category_group)
+
+        self.category_summary_table = QTableWidget()
+        self.category_summary_table.setColumnCount(5)
+        self.category_summary_table.setHorizontalHeaderLabels(
+            ["Sr. No.", "Category", "Total Items", "Total Quantity", "Total Weight (g)"]
+        )
+
+        # Configure category summary table
+        cat_header = self.category_summary_table.horizontalHeader()
+        if cat_header:
+            cat_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Sr. No.
+            cat_header.setSectionResizeMode(1, QHeaderView.Stretch)  # Category
+            cat_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Items
+            cat_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Quantity
+            cat_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Weight
+
+        self.category_summary_table.setAlternatingRowColors(True)
+        category_layout.addWidget(self.category_summary_table)
+        splitter.addWidget(category_group)
+
+        # Total summary section
+        total_group = QGroupBox("📊 Overall Summary")
+        total_layout = QGridLayout(total_group)
+
+        # Summary labels
+        total_layout.addWidget(QLabel("Total Categories:"), 0, 0)
+        self.total_categories_label = QLabel("0")
+        self.total_categories_label.setStyleSheet("font-weight: bold; color: #2E8B57;")
+        total_layout.addWidget(self.total_categories_label, 0, 1)
+
+        total_layout.addWidget(QLabel("Total Products:"), 1, 0)
+        self.total_products_label = QLabel("0")
+        self.total_products_label.setStyleSheet("font-weight: bold; color: #2E8B57;")
+        total_layout.addWidget(self.total_products_label, 1, 1)
+
+        total_layout.addWidget(QLabel("Total Quantity:"), 2, 0)
+        self.total_quantity_label = QLabel("0")
+        self.total_quantity_label.setStyleSheet("font-weight: bold; color: #4169E1;")
+        total_layout.addWidget(self.total_quantity_label, 2, 1)
+
+        total_layout.addWidget(QLabel("Total Gross Weight:"), 0, 2)
+        self.total_gross_weight_label = QLabel("0.0 g")
+        self.total_gross_weight_label.setStyleSheet(
+            "font-weight: bold; color: #8B4513;"
+        )
+        total_layout.addWidget(self.total_gross_weight_label, 0, 3)
+
+        total_layout.addWidget(QLabel("Total Net Weight:"), 1, 2)
+        self.total_net_weight_label = QLabel("0.0 g")
+        self.total_net_weight_label.setStyleSheet("font-weight: bold; color: #8B4513;")
+        total_layout.addWidget(self.total_net_weight_label, 1, 3)
+
+        total_layout.addWidget(QLabel("Total Value:"), 2, 2)
+        self.total_value_label = QLabel("₹0.00")
+        self.total_value_label.setStyleSheet("font-weight: bold; color: #DC143C;")
+        total_layout.addWidget(self.total_value_label, 2, 3)
+
+        splitter.addWidget(total_group)
+        layout.addWidget(splitter)
+
+        self.tab_widget.addTab(tab, "📈 Summary")
+
     def load_data(self):
         """Load all data for the stock management."""
         try:
@@ -516,6 +596,9 @@ class StockTab(QWidget):
             # Load stock movements
             self.load_stock_movements()
 
+            # Load inventory summary
+            self.load_inventory_summary()
+
             # Update summary
             self.update_summary()
 
@@ -541,7 +624,13 @@ class StockTab(QWidget):
         self.products_table.setRowCount(len(products))
 
         for row, product in enumerate(products):
-            self.products_table.setItem(row, 0, QTableWidgetItem(str(product["id"])))
+            # Show category_item_id if available, otherwise global ID
+            cat_item_id = product.get("category_item_id")
+            if cat_item_id:
+                id_display = f"{product['id']} (Cat #{cat_item_id})"
+            else:
+                id_display = str(product["id"])
+            self.products_table.setItem(row, 0, QTableWidgetItem(id_display))
             self.products_table.setItem(row, 1, QTableWidgetItem(product["name"]))
             self.products_table.setItem(
                 row, 2, QTableWidgetItem(product.get("description", ""))
@@ -564,10 +653,7 @@ class StockTab(QWidget):
             self.products_table.setItem(row, 6, quantity_item)
 
             self.products_table.setItem(
-                row, 7, QTableWidgetItem(f"₹{product['unit_price']:.2f}")
-            )
-            self.products_table.setItem(
-                row, 8, QTableWidgetItem(product.get("supplier_name", ""))
+                row, 7, QTableWidgetItem(product.get("supplier_name", ""))
             )
 
             # Action buttons
@@ -587,7 +673,7 @@ class StockTab(QWidget):
             )
             action_layout.addWidget(delete_btn)
 
-            self.products_table.setCellWidget(row, 9, action_widget)
+            self.products_table.setCellWidget(row, 8, action_widget)
 
     def load_categories_table(self):
         """Load categories into the table."""
@@ -609,6 +695,12 @@ class StockTab(QWidget):
                 action_widget = QWidget()
                 action_layout = QHBoxLayout(action_widget)
                 action_layout.setContentsMargins(4, 4, 4, 4)
+
+                edit_btn = QPushButton("Edit")
+                edit_btn.clicked.connect(
+                    lambda checked, c_id=category["id"]: self.edit_category(c_id)
+                )
+                action_layout.addWidget(edit_btn)
 
                 delete_btn = QPushButton("Delete")
                 delete_btn.clicked.connect(
@@ -647,6 +739,12 @@ class StockTab(QWidget):
                 action_layout = QHBoxLayout(action_widget)
                 action_layout.setContentsMargins(4, 4, 4, 4)
 
+                edit_btn = QPushButton("Edit")
+                edit_btn.clicked.connect(
+                    lambda checked, s_id=supplier["id"]: self.edit_supplier(s_id)
+                )
+                action_layout.addWidget(edit_btn)
+
                 delete_btn = QPushButton("Delete")
                 delete_btn.clicked.connect(
                     lambda checked, s_id=supplier["id"]: self.delete_supplier(s_id)
@@ -657,6 +755,102 @@ class StockTab(QWidget):
 
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error loading suppliers: {str(e)}")
+
+    def load_inventory_summary(self):
+        """Load inventory summary data with category-wise and total summaries."""
+        try:
+            # Get all products with their categories
+            products = self.db.get_products()
+            categories = self.db.get_categories()
+
+            # Create category mapping for easy lookup
+            category_map = {cat["id"]: cat["name"] for cat in categories}
+
+            # Initialize category-wise summaries
+            category_summary = {}
+            total_products = len(products)
+            total_quantity = 0
+            total_gross_weight = 0.0
+            total_net_weight = 0.0
+            total_value = 0.0
+
+            # Process each product
+            for product in products:
+                category_id = product.get("category_id")
+                category_name = category_map.get(category_id, "Uncategorized")
+
+                if category_name not in category_summary:
+                    category_summary[category_name] = {
+                        "items": 0,
+                        "quantity": 0,
+                        "gross_weight": 0.0,
+                        "net_weight": 0.0,
+                    }
+
+                # Add to category summary
+                category_summary[category_name]["items"] += 1
+                category_summary[category_name]["quantity"] += product.get(
+                    "quantity", 0
+                )
+                category_summary[category_name]["gross_weight"] += product.get(
+                    "gross_weight", 0.0
+                )
+                category_summary[category_name]["net_weight"] += product.get(
+                    "net_weight", 0.0
+                )
+
+                # Add to totals
+                total_quantity += product.get("quantity", 0)
+                total_gross_weight += product.get("gross_weight", 0.0)
+                total_net_weight += product.get("net_weight", 0.0)
+                total_value += product.get("quantity", 0) * product.get(
+                    "unit_price", 0.0
+                )
+
+            # Update category summary table
+            self.category_summary_table.setRowCount(len(category_summary))
+            row = 0
+
+            for category_name, summary in sorted(category_summary.items()):
+                # Sr. No.
+                self.category_summary_table.setItem(
+                    row, 0, QTableWidgetItem(str(row + 1))
+                )
+
+                # Category Name
+                self.category_summary_table.setItem(
+                    row, 1, QTableWidgetItem(category_name)
+                )
+
+                # Total Items
+                self.category_summary_table.setItem(
+                    row, 2, QTableWidgetItem(str(summary["items"]))
+                )
+
+                # Total Quantity
+                self.category_summary_table.setItem(
+                    row, 3, QTableWidgetItem(str(summary["quantity"]))
+                )
+
+                # Total Weight (Net Weight)
+                self.category_summary_table.setItem(
+                    row, 4, QTableWidgetItem(f"{summary['net_weight']:.3f}")
+                )
+
+                row += 1
+
+            # Update total summary labels
+            self.total_categories_label.setText(str(len(categories)))
+            self.total_products_label.setText(str(total_products))
+            self.total_quantity_label.setText(str(total_quantity))
+            self.total_gross_weight_label.setText(f"{total_gross_weight:.3f} g")
+            self.total_net_weight_label.setText(f"{total_net_weight:.3f} g")
+            self.total_value_label.setText(f"₹{total_value:.2f}")
+
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Warning", f"Error loading inventory summary: {str(e)}"
+            )
 
     def load_stock_movements(self):
         """Load stock movements."""
@@ -693,9 +887,19 @@ class StockTab(QWidget):
                     date_str = str(created_at)
 
                 self.movements_table.setItem(row, 0, QTableWidgetItem(date_str))
-                self.movements_table.setItem(
-                    row, 1, QTableWidgetItem(movement.get("product_name", ""))
-                )
+
+                # Show product name with category_item_id if available
+                product_name = movement.get("product_name", "Deleted Product")
+                cat_item_id = movement.get("category_item_id")
+                category_name = movement.get("category_name")
+                if cat_item_id and category_name:
+                    product_display = f"{category_name} #{cat_item_id}"
+                    if product_name and product_name != "Deleted Product":
+                        product_display += f" ({product_name})"
+                else:
+                    product_display = product_name
+
+                self.movements_table.setItem(row, 1, QTableWidgetItem(product_display))
                 self.movements_table.setItem(
                     row, 2, QTableWidgetItem(movement["movement_type"])
                 )
@@ -722,12 +926,10 @@ class StockTab(QWidget):
         try:
             total_products = len(self.products)
             total_quantity = sum(p["quantity"] for p in self.products)
-            total_value = sum(p["quantity"] * p["unit_price"] for p in self.products)
             low_stock_count = len([p for p in self.products if p["quantity"] <= 5])
 
             self.total_products_label.setText(f"Total Products: {total_products}")
             self.total_quantity_label.setText(f"Total Quantity: {total_quantity:,}")
-            self.total_value_label.setText(f"Total Value: ₹{total_value:,.2f}")
             self.low_stock_label.setText(f"Low Stock Items: {low_stock_count}")
 
             # Set color for low stock warning
@@ -837,7 +1039,6 @@ class StockTab(QWidget):
                 net_weight=net_weight,
                 # No explicit quantity management; default to 1 unit
                 quantity=1,
-                unit_price=self.product_price_spin.value(),
                 supplier_id=supplier_id,
                 category_id=category_id,
                 melting_percentage=self.product_melting_spin.value(),
@@ -852,6 +1053,7 @@ class StockTab(QWidget):
 
             # Reload data
             self.load_products()
+            self.load_inventory_summary()  # Refresh inventory summary
             self.update_summary()
 
             # Emit signal
@@ -869,40 +1071,168 @@ class StockTab(QWidget):
         self.product_gross_weight_spin.setValue(0.0)
         self.product_net_weight_spin.setValue(0.0)
         self.product_quantity_spin.setValue(1)
-        self.product_price_spin.setValue(0.0)
         self.product_supplier_combo.setCurrentIndex(0)
         self.product_melting_spin.setValue(0.0)
 
     def edit_product(self, product_id):
         """Edit a product."""
-        QMessageBox.information(
-            self,
-            "Edit Product",
-            f"Edit functionality for product ID {product_id} will be implemented.",
-        )
+        try:
+            # Get current product data
+            product = None
+            for p in self.products:
+                if p["id"] == product_id:
+                    product = p
+                    break
+
+            if not product:
+                QMessageBox.warning(self, "Error", "Product not found!")
+                return
+
+            # Create edit dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Edit Product")
+            dialog.setModal(True)
+            dialog.resize(400, 500)
+
+            layout = QFormLayout(dialog)
+
+            # Form fields
+            name_edit = QLineEdit(product["name"])
+            desc_edit = QLineEdit(product.get("description", ""))
+            hsn_edit = QLineEdit(product.get("hsn_code", ""))
+
+            gross_weight_spin = QDoubleSpinBox()
+            gross_weight_spin.setDecimals(3)
+            gross_weight_spin.setRange(0.0, 9999.999)
+            gross_weight_spin.setValue(product["gross_weight"])
+
+            net_weight_spin = QDoubleSpinBox()
+            net_weight_spin.setDecimals(3)
+            net_weight_spin.setRange(0.0, 9999.999)
+            net_weight_spin.setValue(product["net_weight"])
+
+            quantity_spin = QSpinBox()
+            quantity_spin.setRange(0, 99999)
+            quantity_spin.setValue(product["quantity"])
+
+            category_combo = QComboBox()
+            category_combo.addItem("", None)
+            for cat in self.categories:
+                category_combo.addItem(cat["name"], cat["id"])
+                if cat["id"] == product.get("category_id"):
+                    category_combo.setCurrentIndex(category_combo.count() - 1)
+
+            supplier_combo = QComboBox()
+            supplier_combo.addItem("", None)
+            for sup in self.suppliers:
+                supplier_combo.addItem(sup["name"], sup["id"])
+                if sup["id"] == product.get("supplier_id"):
+                    supplier_combo.setCurrentIndex(supplier_combo.count() - 1)
+
+            melting_spin = QDoubleSpinBox()
+            melting_spin.setDecimals(1)
+            melting_spin.setRange(0.0, 100.0)
+            melting_spin.setValue(product.get("melting_percentage", 0.0))
+
+            # Add fields to layout
+            layout.addRow("Name:", name_edit)
+            layout.addRow("Description:", desc_edit)
+            layout.addRow("HSN Code:", hsn_edit)
+            layout.addRow("Gross Weight:", gross_weight_spin)
+            layout.addRow("Net Weight:", net_weight_spin)
+            layout.addRow("Quantity:", quantity_spin)
+            layout.addRow("Category:", category_combo)
+            layout.addRow("Supplier:", supplier_combo)
+            layout.addRow("Melting %:", melting_spin)
+
+            # Buttons
+            button_box = QHBoxLayout()
+            save_btn = QPushButton("Save")
+            cancel_btn = QPushButton("Cancel")
+            button_box.addWidget(save_btn)
+            button_box.addWidget(cancel_btn)
+            layout.addRow(button_box)
+
+            # Connect buttons
+            save_btn.clicked.connect(dialog.accept)
+            cancel_btn.clicked.connect(dialog.reject)
+
+            # Show dialog
+            if dialog.exec_() == QDialog.Accepted:
+                # Update product
+                success = self.db.update_product(
+                    product_id=product_id,
+                    name=name_edit.text().strip(),
+                    description=desc_edit.text().strip() or None,
+                    hsn_code=hsn_edit.text().strip() or None,
+                    gross_weight=gross_weight_spin.value(),
+                    net_weight=net_weight_spin.value(),
+                    quantity=quantity_spin.value(),
+                    category_id=category_combo.currentData(),
+                    supplier_id=supplier_combo.currentData(),
+                    melting_percentage=melting_spin.value(),
+                )
+
+                if success:
+                    QMessageBox.information(
+                        self, "Success", "Product updated successfully!"
+                    )
+                    self.load_products()
+                    self.load_inventory_summary()  # Refresh inventory summary
+                    self.update_summary()
+                    self.stock_updated.emit()  # Notify other tabs
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to update product!")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error editing product: {str(e)}")
 
     def delete_product(self, product_id):
         """Delete a product."""
-        reply = QMessageBox.question(
-            self,
-            "Delete Product",
-            "Are you sure you want to delete this product?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
+        try:
+            # Get product name for confirmation
+            product = None
+            for p in self.products:
+                if p["id"] == product_id:
+                    product = p
+                    break
 
-        if reply == QMessageBox.Yes:
-            try:
-                # Note: In a full implementation, you'd need to add delete_product method to the database
-                QMessageBox.information(
-                    self,
-                    "Delete",
-                    f"Product deletion for ID {product_id} will be implemented.",
-                )
-                # self.db.delete_product(product_id)
-                # self.load_products()
-                # self.update_summary()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error deleting product: {str(e)}")
+            if not product:
+                QMessageBox.warning(self, "Error", "Product not found!")
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Delete Product",
+                f"Are you sure you want to delete '{product['name']}'?\n\n"
+                f"This will remove:\n"
+                f"• The product from inventory\n"
+                f"• All related stock movement history\n"
+                f"• Product ID {product_id} will be available for reuse\n\n"
+                f"This action cannot be undone!",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+
+            if reply == QMessageBox.Yes:
+                success = self.db.delete_product(product_id)
+
+                if success:
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"Product '{product['name']}' deleted successfully!\n"
+                        f"Product ID {product_id} is now available for reuse.",
+                    )
+                    self.load_products()
+                    self.load_inventory_summary()  # Refresh inventory summary
+                    self.update_summary()
+                    self.stock_updated.emit()  # Notify other tabs
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to delete product!")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error deleting product: {str(e)}")
 
     def add_category(self):
         """Add a new category."""
@@ -932,25 +1262,112 @@ class StockTab(QWidget):
 
     def delete_category(self, category_id):
         """Delete a category."""
-        reply = QMessageBox.question(
-            self,
-            "Delete Category",
-            "Are you sure you want to delete this category?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
+        try:
+            # Get category details for better user message
+            category = next(
+                (cat for cat in self.categories if cat["id"] == category_id), None
+            )
+            if not category:
+                QMessageBox.warning(self, "Warning", "Category not found.")
+                return
 
-        if reply == QMessageBox.Yes:
-            try:
-                # Note: In a full implementation, you'd need to add delete_category method to the database
-                QMessageBox.information(
-                    self,
-                    "Delete",
-                    f"Category deletion for ID {category_id} will be implemented.",
-                )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Error", f"Error deleting category: {str(e)}"
-                )
+            reply = QMessageBox.question(
+                self,
+                "Delete Category",
+                f"Are you sure you want to delete the category '{category['name']}'?\n\n"
+                f"Note: You cannot delete a category that is being used by products.",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+
+            if reply == QMessageBox.Yes:
+                success = self.db.delete_category(category_id)
+                if success:
+                    QMessageBox.information(
+                        self, "Success", "Category deleted successfully!"
+                    )
+                    self.load_data()  # Refresh all data
+                else:
+                    QMessageBox.warning(
+                        self, "Warning", "Category could not be deleted."
+                    )
+
+        except ValueError as ve:
+            QMessageBox.warning(self, "Cannot Delete", str(ve))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error deleting category: {str(e)}")
+
+    def edit_category(self, category_id):
+        """Edit a category."""
+        try:
+            # Find the category
+            category = next(
+                (cat for cat in self.categories if cat["id"] == category_id), None
+            )
+            if not category:
+                QMessageBox.warning(self, "Warning", "Category not found.")
+                return
+
+            # Create edit dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Edit Category")
+            dialog.setModal(True)
+            dialog.resize(400, 200)
+
+            layout = QFormLayout(dialog)
+
+            # Form fields
+            name_edit = QLineEdit(category["name"])
+            layout.addRow("Category Name:", name_edit)
+
+            desc_edit = QLineEdit(category.get("description", ""))
+            layout.addRow("Description:", desc_edit)
+
+            # Buttons
+            button_layout = QHBoxLayout()
+            save_btn = QPushButton("Save")
+            cancel_btn = QPushButton("Cancel")
+            button_layout.addWidget(save_btn)
+            button_layout.addWidget(cancel_btn)
+            layout.addRow(button_layout)
+
+            # Connect buttons
+            cancel_btn.clicked.connect(dialog.reject)
+
+            def save_changes():
+                name = name_edit.text().strip()
+                description = desc_edit.text().strip()
+
+                if not name:
+                    QMessageBox.warning(
+                        dialog, "Warning", "Please enter a category name."
+                    )
+                    return
+
+                try:
+                    success = self.db.update_category(
+                        category_id, name, description or None
+                    )
+                    if success:
+                        QMessageBox.information(
+                            dialog, "Success", "Category updated successfully!"
+                        )
+                        dialog.accept()
+                        self.load_data()  # Refresh all data
+                    else:
+                        QMessageBox.warning(
+                            dialog, "Warning", "Category could not be updated."
+                        )
+                except Exception as e:
+                    QMessageBox.critical(
+                        dialog, "Error", f"Error updating category: {str(e)}"
+                    )
+
+            save_btn.clicked.connect(save_changes)
+
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error editing category: {str(e)}")
 
     def add_supplier(self):
         """Add a new supplier."""
@@ -993,25 +1410,134 @@ class StockTab(QWidget):
 
     def delete_supplier(self, supplier_id):
         """Delete a supplier."""
-        reply = QMessageBox.question(
-            self,
-            "Delete Supplier",
-            "Are you sure you want to delete this supplier?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
+        try:
+            # Get supplier details for better user message
+            supplier = next(
+                (sup for sup in self.suppliers if sup["id"] == supplier_id), None
+            )
+            if not supplier:
+                QMessageBox.warning(self, "Warning", "Supplier not found.")
+                return
 
-        if reply == QMessageBox.Yes:
-            try:
-                # Note: In a full implementation, you'd need to add delete_supplier method to the database
-                QMessageBox.information(
-                    self,
-                    "Delete",
-                    f"Supplier deletion for ID {supplier_id} will be implemented.",
-                )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Error", f"Error deleting supplier: {str(e)}"
-                )
+            reply = QMessageBox.question(
+                self,
+                "Delete Supplier",
+                f"Are you sure you want to delete the supplier '{supplier['name']}'?\n\n"
+                f"Note: You cannot delete a supplier that is being used by products.",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+
+            if reply == QMessageBox.Yes:
+                success = self.db.delete_supplier(supplier_id)
+                if success:
+                    QMessageBox.information(
+                        self, "Success", "Supplier deleted successfully!"
+                    )
+                    self.load_data()  # Refresh all data
+                else:
+                    QMessageBox.warning(
+                        self, "Warning", "Supplier could not be deleted."
+                    )
+
+        except ValueError as ve:
+            QMessageBox.warning(self, "Cannot Delete", str(ve))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error deleting supplier: {str(e)}")
+
+    def edit_supplier(self, supplier_id):
+        """Edit a supplier."""
+        try:
+            # Find the supplier
+            supplier = next(
+                (sup for sup in self.suppliers if sup["id"] == supplier_id), None
+            )
+            if not supplier:
+                QMessageBox.warning(self, "Warning", "Supplier not found.")
+                return
+
+            # Create edit dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Edit Supplier")
+            dialog.setModal(True)
+            dialog.resize(500, 300)
+
+            layout = QFormLayout(dialog)
+
+            # Form fields
+            name_edit = QLineEdit(supplier["name"])
+            layout.addRow("Supplier Name:", name_edit)
+
+            code_edit = QLineEdit(supplier["code"])
+            layout.addRow("Code:", code_edit)
+
+            contact_edit = QLineEdit(supplier.get("contact_person", ""))
+            layout.addRow("Contact Person:", contact_edit)
+
+            phone_edit = QLineEdit(supplier.get("phone", ""))
+            layout.addRow("Phone:", phone_edit)
+
+            email_edit = QLineEdit(supplier.get("email", ""))
+            layout.addRow("Email:", email_edit)
+
+            address_edit = QLineEdit(supplier.get("address", ""))
+            layout.addRow("Address:", address_edit)
+
+            # Buttons
+            button_layout = QHBoxLayout()
+            save_btn = QPushButton("Save")
+            cancel_btn = QPushButton("Cancel")
+            button_layout.addWidget(save_btn)
+            button_layout.addWidget(cancel_btn)
+            layout.addRow(button_layout)
+
+            # Connect buttons
+            cancel_btn.clicked.connect(dialog.reject)
+
+            def save_changes():
+                name = name_edit.text().strip()
+                code = code_edit.text().strip()
+                contact_person = contact_edit.text().strip()
+                phone = phone_edit.text().strip()
+                email = email_edit.text().strip()
+                address = address_edit.text().strip()
+
+                if not name or not code:
+                    QMessageBox.warning(
+                        dialog, "Warning", "Please enter supplier name and code."
+                    )
+                    return
+
+                try:
+                    success = self.db.update_supplier(
+                        supplier_id,
+                        name,
+                        code,
+                        contact_person or None,
+                        phone or None,
+                        email or None,
+                        address or None,
+                    )
+                    if success:
+                        QMessageBox.information(
+                            dialog, "Success", "Supplier updated successfully!"
+                        )
+                        dialog.accept()
+                        self.load_data()  # Refresh all data
+                    else:
+                        QMessageBox.warning(
+                            dialog, "Warning", "Supplier could not be updated."
+                        )
+                except Exception as e:
+                    QMessageBox.critical(
+                        dialog, "Error", f"Error updating supplier: {str(e)}"
+                    )
+
+            save_btn.clicked.connect(save_changes)
+
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error editing supplier: {str(e)}")
 
     def export_products(self):
         """Export products to CSV."""
@@ -1038,16 +1564,13 @@ class StockTab(QWidget):
                             "Gross Weight",
                             "Net Weight",
                             "Quantity",
-                            "Unit Price",
                             "Supplier",
                             "Melting %",
-                            "Total Value",
                         ]
                     )
 
                     # Write data
                     for product in self.products:
-                        total_value = product["quantity"] * product["unit_price"]
                         writer.writerow(
                             [
                                 product["id"],
@@ -1058,10 +1581,8 @@ class StockTab(QWidget):
                                 product["gross_weight"],
                                 product["net_weight"],
                                 product["quantity"],
-                                product["unit_price"],
                                 product.get("supplier_name", ""),
                                 product.get("melting_percentage", 0),
-                                total_value,
                             ]
                         )
 
