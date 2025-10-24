@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
-from logic.database_manager import UnifiedDatabaseManager
+from logic.database_manager import SupabaseDatabaseManager as UnifiedDatabaseManager
 from logic.calculator import create_calculator
 from ui.billing_tab import BillingTab
 from ui.stock_tab import StockTab

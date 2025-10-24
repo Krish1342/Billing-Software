@@ -41,7 +41,7 @@ import csv
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from logic.database_manager import UnifiedDatabaseManager
+from logic.database_manager import SupabaseDatabaseManager as UnifiedDatabaseManager
 
 
 class StockTab(QWidget):
@@ -267,16 +267,16 @@ class StockTab(QWidget):
 
         # Products table
         self.products_table = QTableWidget()
-        self.products_table.setColumnCount(10)
+        self.products_table.setColumnCount(9)
         self.products_table.setHorizontalHeaderLabels(
             [
                 "ID",
                 "Name",
-                "Description",
+                "Description", 
                 "Category",
                 "Gross Weight",
                 "Net Weight",
-                "Quantity",
+                "Status",
                 "Supplier",
                 "Actions",
             ]
@@ -290,15 +290,12 @@ class StockTab(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Category
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Gross Weight
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Net Weight
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Quantity
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Status
         header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Supplier
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # Actions
 
         self.products_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.products_table.setAlternatingRowColors(True)
-
-        # Hide Quantity column from view
-        self.products_table.setColumnHidden(6, True)
 
         layout.addWidget(self.products_table)
 
@@ -494,7 +491,7 @@ class StockTab(QWidget):
         self.category_summary_table = QTableWidget()
         self.category_summary_table.setColumnCount(5)
         self.category_summary_table.setHorizontalHeaderLabels(
-            ["Sr. No.", "Category", "Total Items", "Total Quantity", "Total Weight (g)"]
+            ["Sr. No.", "Category", "Total Items", "Available Items", "Total Weight (g)"]
         )
 
         # Configure category summary table
@@ -520,15 +517,15 @@ class StockTab(QWidget):
         self.total_categories_label.setStyleSheet("font-weight: bold; color: #2E8B57;")
         total_layout.addWidget(self.total_categories_label, 0, 1)
 
-        total_layout.addWidget(QLabel("Total Products:"), 1, 0)
+        total_layout.addWidget(QLabel("Total Items:"), 1, 0)
         self.total_products_label = QLabel("0")
         self.total_products_label.setStyleSheet("font-weight: bold; color: #2E8B57;")
         total_layout.addWidget(self.total_products_label, 1, 1)
 
-        total_layout.addWidget(QLabel("Total Quantity:"), 2, 0)
-        self.total_quantity_label = QLabel("0")
-        self.total_quantity_label.setStyleSheet("font-weight: bold; color: #4169E1;")
-        total_layout.addWidget(self.total_quantity_label, 2, 1)
+        total_layout.addWidget(QLabel("Available Items:"), 2, 0)
+        self.total_available_label = QLabel("0")
+        self.total_available_label.setStyleSheet("font-weight: bold; color: #4169E1;")
+        total_layout.addWidget(self.total_available_label, 2, 1)
 
         total_layout.addWidget(QLabel("Total Gross Weight:"), 0, 2)
         self.total_gross_weight_label = QLabel("0.0 g")
@@ -542,10 +539,7 @@ class StockTab(QWidget):
         self.total_net_weight_label.setStyleSheet("font-weight: bold; color: #8B4513;")
         total_layout.addWidget(self.total_net_weight_label, 1, 3)
 
-        total_layout.addWidget(QLabel("Total Value:"), 2, 2)
-        self.total_value_label = QLabel("₹0.00")
-        self.total_value_label.setStyleSheet("font-weight: bold; color: #DC143C;")
-        total_layout.addWidget(self.total_value_label, 2, 3)
+        # Remove total value as we don't track unit prices
 
         splitter.addWidget(total_group)
         layout.addWidget(splitter)
@@ -627,9 +621,9 @@ class StockTab(QWidget):
             # Show category_item_id if available, otherwise global ID
             cat_item_id = product.get("category_item_id")
             if cat_item_id:
-                id_display = f"{product['id']} (Cat #{cat_item_id})"
+                id_display = f"{product['category_name']} #{cat_item_id}"
             else:
-                id_display = str(product["id"])
+                id_display = str(product["id"])[:8] + "..."
             self.products_table.setItem(row, 0, QTableWidgetItem(id_display))
             self.products_table.setItem(row, 1, QTableWidgetItem(product["name"]))
             self.products_table.setItem(
@@ -645,12 +639,14 @@ class StockTab(QWidget):
                 row, 5, QTableWidgetItem(f"{product['net_weight']:.3f}")
             )
 
-            # Highlight low stock
-            quantity = product["quantity"]
-            quantity_item = QTableWidgetItem(str(quantity))
-            if quantity <= 5:
-                quantity_item.setBackground(Qt.red if quantity == 0 else Qt.yellow)
-            self.products_table.setItem(row, 6, quantity_item)
+            # Status instead of quantity
+            status = product.get("status", "AVAILABLE")
+            status_item = QTableWidgetItem(status)
+            if status == "SOLD":
+                status_item.setBackground(Qt.lightGray)
+            elif status == "RESERVED":
+                status_item.setBackground(Qt.yellow)
+            self.products_table.setItem(row, 6, status_item)
 
             self.products_table.setItem(
                 row, 7, QTableWidgetItem(product.get("supplier_name", ""))
@@ -667,11 +663,13 @@ class StockTab(QWidget):
             )
             action_layout.addWidget(edit_btn)
 
-            delete_btn = QPushButton("Delete")
-            delete_btn.clicked.connect(
-                lambda checked, p_id=product["id"]: self.delete_product(p_id)
-            )
-            action_layout.addWidget(delete_btn)
+            # Only show delete button for available items
+            if status == "AVAILABLE":
+                delete_btn = QPushButton("Delete")
+                delete_btn.clicked.connect(
+                    lambda checked, p_id=product["id"]: self.delete_product(p_id)
+                )
+                action_layout.addWidget(delete_btn)
 
             self.products_table.setCellWidget(row, 8, action_widget)
 
@@ -759,59 +757,18 @@ class StockTab(QWidget):
     def load_inventory_summary(self):
         """Load inventory summary data with category-wise and total summaries."""
         try:
-            # Get all products with their categories
-            products = self.db.get_products()
-            categories = self.db.get_categories()
-
-            # Create category mapping for easy lookup
-            category_map = {cat["id"]: cat["name"] for cat in categories}
-
-            # Initialize category-wise summaries
-            category_summary = {}
-            total_products = len(products)
-            total_quantity = 0
-            total_gross_weight = 0.0
-            total_net_weight = 0.0
-            total_value = 0.0
-
-            # Process each product
-            for product in products:
-                category_id = product.get("category_id")
-                category_name = category_map.get(category_id, "Uncategorized")
-
-                if category_name not in category_summary:
-                    category_summary[category_name] = {
-                        "items": 0,
-                        "quantity": 0,
-                        "gross_weight": 0.0,
-                        "net_weight": 0.0,
-                    }
-
-                # Add to category summary
-                category_summary[category_name]["items"] += 1
-                category_summary[category_name]["quantity"] += product.get(
-                    "quantity", 0
-                )
-                category_summary[category_name]["gross_weight"] += product.get(
-                    "gross_weight", 0.0
-                )
-                category_summary[category_name]["net_weight"] += product.get(
-                    "net_weight", 0.0
-                )
-
-                # Add to totals
-                total_quantity += product.get("quantity", 0)
-                total_gross_weight += product.get("gross_weight", 0.0)
-                total_net_weight += product.get("net_weight", 0.0)
-                total_value += product.get("quantity", 0) * product.get(
-                    "unit_price", 0.0
-                )
-
+            # Get category summary data using new view
+            category_summary = self.db.get_category_summary()
+            
             # Update category summary table
             self.category_summary_table.setRowCount(len(category_summary))
-            row = 0
-
-            for category_name, summary in sorted(category_summary.items()):
+            
+            total_available_items = 0
+            total_sold_items = 0
+            total_gross_weight = 0.0
+            total_net_weight = 0.0
+            
+            for row, summary in enumerate(category_summary):
                 # Sr. No.
                 self.category_summary_table.setItem(
                     row, 0, QTableWidgetItem(str(row + 1))
@@ -819,33 +776,40 @@ class StockTab(QWidget):
 
                 # Category Name
                 self.category_summary_table.setItem(
-                    row, 1, QTableWidgetItem(category_name)
+                    row, 1, QTableWidgetItem(summary['category_name'])
                 )
 
                 # Total Items
                 self.category_summary_table.setItem(
-                    row, 2, QTableWidgetItem(str(summary["items"]))
+                    row, 2, QTableWidgetItem(str(summary['total_items']))
                 )
 
-                # Total Quantity
+                # Available Items
                 self.category_summary_table.setItem(
-                    row, 3, QTableWidgetItem(str(summary["quantity"]))
+                    row, 3, QTableWidgetItem(str(summary['available_items']))
                 )
 
                 # Total Weight (Net Weight)
                 self.category_summary_table.setItem(
-                    row, 4, QTableWidgetItem(f"{summary['net_weight']:.3f}")
+                    row, 4, QTableWidgetItem(f"{summary['available_net_weight']:.3f}")
                 )
 
-                row += 1
+                # Add to totals
+                total_available_items += summary['available_items']
+                total_sold_items += summary['sold_items']
+                total_gross_weight += float(summary['available_gross_weight'])
+                total_net_weight += float(summary['available_net_weight'])
 
+            # Get total summary
+            total_summary = self.db.get_total_summary()
+            
             # Update total summary labels
-            self.total_categories_label.setText(str(len(categories)))
-            self.total_products_label.setText(str(total_products))
-            self.total_quantity_label.setText(str(total_quantity))
-            self.total_gross_weight_label.setText(f"{total_gross_weight:.3f} g")
-            self.total_net_weight_label.setText(f"{total_net_weight:.3f} g")
-            self.total_value_label.setText(f"₹{total_value:.2f}")
+            self.total_categories_label.setText(str(len(category_summary)))
+            self.total_products_label.setText(str(total_summary.get('total_available_items', 0) + 
+                                                  total_summary.get('total_sold_items', 0)))
+            self.total_available_label.setText(str(total_summary.get('total_available_items', 0)))
+            self.total_gross_weight_label.setText(f"{total_summary.get('total_available_gross_weight', 0):.3f} g")
+            self.total_net_weight_label.setText(f"{total_summary.get('total_available_net_weight', 0):.3f} g")
 
         except Exception as e:
             QMessageBox.warning(
@@ -925,11 +889,11 @@ class StockTab(QWidget):
         """Update inventory summary."""
         try:
             total_products = len(self.products)
-            total_quantity = sum(p["quantity"] for p in self.products)
-            low_stock_count = len([p for p in self.products if p["quantity"] <= 5])
+            total_available = len([p for p in self.products if p["status"] == "AVAILABLE"])
+            low_stock_count = 0  # In serialized inventory, low stock is when category has < 5 items
 
             self.total_products_label.setText(f"Total Products: {total_products}")
-            self.total_quantity_label.setText(f"Total Quantity: {total_quantity:,}")
+            self.total_available_label.setText(f"Available Items: {total_available}")
             self.low_stock_label.setText(f"Low Stock Items: {low_stock_count}")
 
             # Set color for low stock warning
