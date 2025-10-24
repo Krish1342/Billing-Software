@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
-from logic.database_manager import SupabaseDatabaseManager as UnifiedDatabaseManager
+from logic.database_config import create_database_manager
 from logic.calculator import create_calculator
 from ui.billing_tab import BillingTab
 from ui.stock_tab import StockTab
@@ -72,7 +72,7 @@ class UnifiedJewelryApp(QMainWindow):
     def init_database(self):
         """Initialize database connection."""
         try:
-            self.db = UnifiedDatabaseManager()
+            self.db = create_database_manager()
             self.calculator = create_calculator(
                 self.settings["tax"]["cgst_rate"], self.settings["tax"]["sgst_rate"]
             )

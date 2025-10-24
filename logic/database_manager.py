@@ -43,6 +43,10 @@ class SupabaseDatabaseManager:
         """Close database connection (no-op for Supabase)."""
         pass
     
+    def get_connection(self):
+        """Get database connection (returns self for Supabase compatibility)."""
+        return self.supabase
+    
     # Categories
     def get_categories(self) -> List[Dict]:
         """Get all categories."""
@@ -492,31 +496,45 @@ class SupabaseDatabaseManager:
     def get_next_invoice_number(self) -> str:
         """Get the next invoice number."""
         try:
-            # Get the latest bill number and increment
-            result = self.supabase.table('bills').select('bill_number').order('created_at', desc=True).limit(1).execute()
+            from datetime import datetime
+            current_year = datetime.now().year
+            
+            # Try to get the highest existing number for current year
+            result = self.supabase.table('bills').select('bill_number').like('bill_number', f'RK-{current_year}-%').order('bill_number', desc=True).limit(1).execute()
             
             if result.data:
                 last_bill = result.data[0]['bill_number']
-                # Extract number part (assuming format like "RK-2024-001")
                 try:
                     parts = last_bill.split('-')
-                    if len(parts) >= 3:
-                        prefix = '-'.join(parts[:-1])
+                    if len(parts) >= 3 and parts[1] == str(current_year):
                         number = int(parts[-1]) + 1
-                        return f"{prefix}-{number:03d}"
+                        new_number = f"RK-{current_year}-{number:03d}"
+                        
+                        # Verify this number doesn't exist
+                        check = self.supabase.table('bills').select('id').eq('bill_number', new_number).execute()
+                        if not check.data:
+                            return new_number
                 except:
                     pass
             
-            # Fallback to default format
+            # Find next available number starting from 001
+            for i in range(1, 10000):  # Support up to 9999 invoices per year
+                new_number = f"RK-{current_year}-{i:03d}"
+                check = self.supabase.table('bills').select('id').eq('bill_number', new_number).execute()
+                if not check.data:
+                    return new_number
+            
+            # Fallback with timestamp if all numbers exhausted
             from datetime import datetime
-            current_year = datetime.now().year
-            return f"RK-{current_year}-001"
+            timestamp = datetime.now().strftime("%H%M%S")
+            return f"RK-{current_year}-{timestamp}"
             
         except Exception as e:
             print(f"Error getting next invoice number: {e}")
             from datetime import datetime
             current_year = datetime.now().year
-            return f"RK-{current_year}-001"
+            timestamp = datetime.now().strftime("%H%M%S")
+            return f"RK-{current_year}-{timestamp}"
     
     def get_sales_summary(self, from_date: str = None, to_date: str = None) -> Dict:
         """Get sales summary for given date range."""
