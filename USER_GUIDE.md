@@ -42,11 +42,13 @@ run.bat
 ## 🔧 Configuration
 
 ### **Online Mode (Supabase)**
+
 1. Make sure your `.env` file has the correct Supabase credentials
 2. Ensure internet connection
 3. Run the application
 
 ### **Offline Mode (SQLite)**
+
 1. Set `OFFLINE_MODE=true` in `.env` file, OR
 2. The app will automatically switch to offline if no Supabase connection
 3. All data will be stored locally in `jewelry_management.db`
@@ -71,6 +73,7 @@ run.bat
 1. **Start the application**
 2. **Go to Settings tab**
 3. **Update company information:**
+
    - Company name, address, phone
    - GSTIN number
    - Tax rates (CGST/SGST)
@@ -83,22 +86,26 @@ run.bat
 ## 🛠️ Troubleshooting
 
 ### **If the app won't start:**
+
 - Run as Administrator
 - Check Windows Defender/Antivirus settings
 - Install Visual C++ Redistributable if prompted
 
 ### **If database connection fails:**
+
 - App will automatically switch to offline mode
 - Check `.env` file for correct Supabase credentials
 - Verify internet connection
 
 ### **If you see duplicate invoice errors:**
+
 - This has been fixed! The app now checks for existing invoice numbers
 - Invoice numbers are automatically generated uniquely
 
 ## 📊 Your Current Status
 
 Based on the test results:
+
 - **Database Connection**: ✅ Working (Supabase online mode)
 - **Next Invoice Number**: RK-2025-001
 - **Sales Data**: 5 invoices totaling ₹75,750
@@ -110,6 +117,7 @@ Based on the test results:
 Your jewelry management system is now fully operational and ready for production use. All the issues have been resolved and the system is working perfectly with both online and offline capabilities.
 
 **Start using it right now:**
+
 ```bash
 dist\JewelryManagement.exe
 ```
