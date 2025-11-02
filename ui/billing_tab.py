@@ -1121,12 +1121,7 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
                 "rounded_off": float(totals["rounded_off"]),
             }
 
-            # Save to database with stock deduction
-            invoice_id, warnings = self.db.generate_invoice_with_stock_deduction(
-                invoice_data, self.line_items
-            )
-
-            # Auto-save PDF to default invoices folder from settings
+            # Prepare output path first (before any database operations)
             invoices_root = self.settings.get("invoice", {}).get(
                 "default_save_path", "invoices"
             )
@@ -1134,8 +1129,22 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
             invoices_dir.mkdir(parents=True, exist_ok=True)
             output_path = invoices_dir / f"invoice_{invoice_data['invoice_number']}.pdf"
 
-            self.pdf_generator.generate_invoice_pdf(
-                str(output_path), invoice_data, self.line_items
+            # Try to generate PDF first before saving to database
+            try:
+                self.pdf_generator.generate_invoice_pdf(
+                    str(output_path), invoice_data, self.line_items
+                )
+            except Exception as pdf_error:
+                QMessageBox.critical(
+                    self,
+                    "PDF Generation Error",
+                    f"Failed to generate invoice PDF: {str(pdf_error)}\n\nInvoice was NOT saved to database.",
+                )
+                return
+
+            # Only save to database if PDF generation succeeded
+            invoice_id, warnings = self.db.generate_invoice_with_stock_deduction(
+                invoice_data, self.line_items
             )
 
             # Store last outputs for toolbar actions

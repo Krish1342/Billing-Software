@@ -228,10 +228,10 @@ class InvoicePDFGenerator:
         y -= 10 * mm
         c.setFont("Helvetica", 10)
         c.setFillColor(colors.black)
-        address_text = (
-            f"{self.company['address_line1']}, {self.company['address_line2']}"
-        )
-        c.drawCentredString((x1 + x2) / 2, y, address_text)
+        # Use 'address' field from settings
+        address_text = self.company.get("address", "")
+        if address_text:
+            c.drawCentredString((x1 + x2) / 2, y, address_text)
 
         y -= 5 * mm
         contact_text = (
