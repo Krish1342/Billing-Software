@@ -29,6 +29,8 @@ from PyQt5.QtWidgets import (
     QCompleter,
     QAbstractItemView,
     QFrame,
+    QScrollArea,
+    QSizePolicy,
 )
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QStringListModel
 from PyQt5.QtGui import QFont, QDoubleValidator, QIntValidator
@@ -36,13 +38,20 @@ from decimal import Decimal, InvalidOperation
 import json
 from datetime import datetime
 from typing import List, Dict, Optional
+import os
+from pathlib import Path
 
 from logic.database_manager import UnifiedDatabaseManager
 from logic.calculator import create_calculator, CalculationError
 from logic.pdf_generator import InvoicePDFGenerator
+from ui.keyboard_navigation import (
+    KeyboardNavigationMixin,
+    ConfirmationDialog,
+    create_shortcut_tooltip,
+)
 
 
-class BillingTab(QWidget):
+class BillingTab(QWidget, KeyboardNavigationMixin):
     """Billing tab widget with invoice creation and stock deduction."""
 
     # Signals
@@ -56,6 +65,11 @@ class BillingTab(QWidget):
         self.settings = settings
         self.pdf_generator = InvoicePDFGenerator("settings.json")
 
+        # Post-generation state
+        self.last_pdf_path: Optional[str] = None
+        self.last_invoice_data: Optional[Dict] = None
+        self.last_line_items: Optional[List[Dict]] = None
+
         # Data
         self.line_items = []
         self.customers = []
@@ -65,11 +79,19 @@ class BillingTab(QWidget):
 
         # Setup UI
         self.init_ui()
+        self.setup_keyboard_navigation()
         self.load_data()
 
     def init_ui(self):
-        """Initialize the billing UI."""
-        layout = QVBoxLayout(self)
+        """Initialize the billing UI with a scrollable page."""
+        # Outer layout contains a single scroll area so the whole page can scroll
+        outer_layout = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+
+        # Scrollable page contents
+        page = QWidget()
+        layout = QVBoxLayout(page)
 
         # Header
         header_label = QLabel("🧾 Invoice Creation")
@@ -93,6 +115,10 @@ class BillingTab(QWidget):
         # Action buttons
         self.create_action_buttons(layout)
 
+        # Finalize scroll area
+        scroll.setWidget(page)
+        outer_layout.addWidget(scroll)
+
     def create_invoice_details_section(self, layout):
         """Create invoice details section."""
         group = QGroupBox("Invoice Details")
@@ -102,29 +128,54 @@ class BillingTab(QWidget):
         group_layout.addWidget(QLabel("Invoice No:"), 0, 0)
         self.invoice_number_edit = QLineEdit()
         self.invoice_number_edit.setReadOnly(True)
+        self.invoice_number_edit.setMinimumHeight(30)
+        self.invoice_number_edit.setSizePolicy(
+            self.invoice_number_edit.sizePolicy().horizontalPolicy(),
+            self.invoice_number_edit.sizePolicy().Expanding,
+        )
         group_layout.addWidget(self.invoice_number_edit, 0, 1)
 
         group_layout.addWidget(QLabel("Date:"), 0, 2)
         self.invoice_date_edit = QDateEdit()
         self.invoice_date_edit.setDate(QDate.currentDate())
         self.invoice_date_edit.setCalendarPopup(True)
+        self.invoice_date_edit.setMinimumHeight(30)
+        self.invoice_date_edit.setSizePolicy(
+            self.invoice_date_edit.sizePolicy().horizontalPolicy(),
+            self.invoice_date_edit.sizePolicy().Expanding,
+        )
         group_layout.addWidget(self.invoice_date_edit, 0, 3)
 
         # Row 1: Customer details
         group_layout.addWidget(QLabel("Customer Name:"), 1, 0)
         self.customer_name_edit = QLineEdit()
         self.customer_name_edit.setPlaceholderText("Enter customer name")
+        self.customer_name_edit.setMinimumHeight(30)
+        self.customer_name_edit.setSizePolicy(
+            self.customer_name_edit.sizePolicy().horizontalPolicy(),
+            self.customer_name_edit.sizePolicy().Expanding,
+        )
         group_layout.addWidget(self.customer_name_edit, 1, 1, 1, 3)
 
         # Row 2: Customer contact
         group_layout.addWidget(QLabel("Phone:"), 2, 0)
         self.customer_phone_edit = QLineEdit()
         self.customer_phone_edit.setPlaceholderText("Optional")
+        self.customer_phone_edit.setMinimumHeight(30)
+        self.customer_phone_edit.setSizePolicy(
+            self.customer_phone_edit.sizePolicy().horizontalPolicy(),
+            self.customer_phone_edit.sizePolicy().Expanding,
+        )
         group_layout.addWidget(self.customer_phone_edit, 2, 1)
 
         group_layout.addWidget(QLabel("GSTIN:"), 2, 2)
         self.customer_gstin_edit = QLineEdit()
         self.customer_gstin_edit.setPlaceholderText("Optional")
+        self.customer_gstin_edit.setMinimumHeight(30)
+        self.customer_gstin_edit.setSizePolicy(
+            self.customer_gstin_edit.sizePolicy().horizontalPolicy(),
+            self.customer_gstin_edit.sizePolicy().Expanding,
+        )
         group_layout.addWidget(self.customer_gstin_edit, 2, 3)
 
         layout.addWidget(group)
@@ -133,11 +184,21 @@ class BillingTab(QWidget):
         """Create line items section."""
         group = QGroupBox("Line Items")
         group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(8, 8, 8, 8)
+        group_layout.setSpacing(12)
 
         # Add item form
         add_form = QFrame()
         add_form.setFrameStyle(QFrame.StyledPanel)
+        # Keep the form readable and separate from the table
+        add_form.setMinimumHeight(170)
+        add_form.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         add_layout = QGridLayout(add_form)
+        add_layout.setContentsMargins(8, 8, 4, 4)
+        add_layout.setVerticalSpacing(8)
+        # Prevent row compression when maximizing
+        for r in range(0, 6):
+            add_layout.setRowMinimumHeight(r, 30)
 
         # Row 0: Custom order toggle
         self.custom_order_check = QCheckBox("Custom Order (not in stock)")
@@ -145,6 +206,7 @@ class BillingTab(QWidget):
             "Tick for made-to-order items not present in inventory"
         )
         self.custom_order_check.toggled.connect(self.on_custom_order_toggled)
+        self.custom_order_check.setMinimumHeight(30)
         add_layout.addWidget(self.custom_order_check, 0, 0, 1, 4)
 
         # Row 1: Category and Item (weight) or Weight (g) for custom
@@ -152,6 +214,11 @@ class BillingTab(QWidget):
         self.category_combo = QComboBox()
         self.category_combo.currentIndexChanged.connect(self.on_category_selected)
         self.category_combo.setToolTip("Choose a category first")
+        self.category_combo.setMinimumHeight(30)
+        self.category_combo.setSizePolicy(
+            self.category_combo.sizePolicy().horizontalPolicy(),
+            self.category_combo.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.category_combo, 1, 1)
 
         self.item_label = QLabel("Select Weight:")
@@ -160,6 +227,11 @@ class BillingTab(QWidget):
         self.item_combo.setEditable(False)
         self.item_combo.currentIndexChanged.connect(self.on_item_selected)
         self.item_combo.setToolTip("Pick an item by its weight")
+        self.item_combo.setMinimumHeight(30)
+        self.item_combo.setSizePolicy(
+            self.item_combo.sizePolicy().horizontalPolicy(),
+            self.item_combo.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.item_combo, 1, 3)
 
         # Weight (g)
@@ -169,6 +241,11 @@ class BillingTab(QWidget):
         self.net_weight_spin.setRange(0.001, 999999.999)
         self.net_weight_spin.setValue(1.000)
         self.net_weight_spin.setToolTip("Enter the net weight in grams")
+        self.net_weight_spin.setMinimumHeight(30)
+        self.net_weight_spin.setSizePolicy(
+            self.net_weight_spin.sizePolicy().horizontalPolicy(),
+            self.net_weight_spin.sizePolicy().Expanding,
+        )
         # Initially hide weight for non-custom flow; will be shown for custom
         self.weight_label.setVisible(False)
         self.net_weight_spin.setVisible(False)
@@ -179,12 +256,22 @@ class BillingTab(QWidget):
         add_layout.addWidget(QLabel("Description:"), 2, 0)
         self.description_edit = QLineEdit()
         self.description_edit.setPlaceholderText("Item description")
+        self.description_edit.setMinimumHeight(30)
+        self.description_edit.setSizePolicy(
+            self.description_edit.sizePolicy().horizontalPolicy(),
+            self.description_edit.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.description_edit, 2, 1, 1, 3)
 
         # Row 3: HSN
         add_layout.addWidget(QLabel("HSN Code:"), 3, 0)
         self.hsn_edit = QLineEdit()
         self.hsn_edit.setPlaceholderText("HSN/SAC Code")
+        self.hsn_edit.setMinimumHeight(30)
+        self.hsn_edit.setSizePolicy(
+            self.hsn_edit.sizePolicy().horizontalPolicy(),
+            self.hsn_edit.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.hsn_edit, 3, 1)
 
         # Row 4: Rate and Amount
@@ -193,6 +280,11 @@ class BillingTab(QWidget):
         self.rate_spin.setDecimals(2)
         self.rate_spin.setRange(0.0, 999999.99)
         self.rate_spin.valueChanged.connect(self.calculate_line_total)
+        self.rate_spin.setMinimumHeight(30)
+        self.rate_spin.setSizePolicy(
+            self.rate_spin.sizePolicy().horizontalPolicy(),
+            self.rate_spin.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.rate_spin, 4, 1)
 
         # Amount
@@ -201,14 +293,27 @@ class BillingTab(QWidget):
         self.amount_spin.setDecimals(2)
         self.amount_spin.setRange(0.0, 999999.99)
         self.amount_spin.valueChanged.connect(self.calculate_from_amount)
+        self.amount_spin.setMinimumHeight(30)
+        self.amount_spin.setSizePolicy(
+            self.amount_spin.sizePolicy().horizontalPolicy(),
+            self.amount_spin.sizePolicy().Expanding,
+        )
         add_layout.addWidget(self.amount_spin, 4, 3)
 
         # Add button
         self.add_item_btn = QPushButton("Add Item")
         self.add_item_btn.clicked.connect(self.add_line_item)
+        self.add_item_btn.setToolTip(
+            create_shortcut_tooltip(
+                "Add item to invoice", "Enter (when Amount field is focused)"
+            )
+        )
+        self.add_item_btn.setMinimumHeight(35)
         add_layout.addWidget(self.add_item_btn, 5, 0, 1, 4)
 
         group_layout.addWidget(add_form)
+        # Nudge the table a bit lower so it doesn't visually touch the form
+        group_layout.addSpacing(6)
 
         # Line items table
         self.line_items_table = QTableWidget()
@@ -227,13 +332,14 @@ class BillingTab(QWidget):
 
         # Configure table
         header = self.line_items_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Description
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # HSN
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Weight
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Rate
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Amount
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Stock
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Actions
+        if header:
+            header.setSectionResizeMode(0, QHeaderView.Stretch)  # Description
+            header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # HSN
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Weight
+            header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Rate
+            header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Amount
+            header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Stock
+            header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Actions
 
         self.line_items_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.line_items_table.setAlternatingRowColors(True)
@@ -326,7 +432,13 @@ class BillingTab(QWidget):
 
         # Generate PDF
         self.generate_pdf_btn = QPushButton("Generate Invoice")
-        self.generate_pdf_btn.clicked.connect(self.generate_invoice)
+        self.generate_pdf_btn.clicked.connect(self.generate_invoice_with_confirmation)
+        self.generate_pdf_btn.setToolTip(
+            create_shortcut_tooltip(
+                "Generate invoice PDF with stock deduction",
+                "Enter (when Override Total field is focused)",
+            )
+        )
         self.generate_pdf_btn.setStyleSheet(
             """
             QPushButton {
@@ -345,6 +457,116 @@ class BillingTab(QWidget):
 
         button_layout.addStretch()
         layout.addLayout(button_layout)
+
+        # Add persistent post-actions toolbar
+        self.create_post_actions(layout)
+
+        # Status label for generation feedback
+        self.post_actions_status_label = QLabel("")
+        self.post_actions_status_label.setStyleSheet("color: #2E8B57;")
+        layout.addWidget(self.post_actions_status_label)
+
+    def create_post_actions(self, layout):
+        """Create persistent Print & Save action buttons (enabled after generation)."""
+        actions_group = QGroupBox("Print & Save")
+        actions_layout = QHBoxLayout(actions_group)
+
+        self.open_pdf_btn = QPushButton("Open PDF")
+        self.open_pdf_btn.clicked.connect(self.open_last_pdf)
+        self.print_pdf_btn = QPushButton("Print")
+        self.print_pdf_btn.clicked.connect(self.print_last_pdf)
+        self.save_as_pdf_btn = QPushButton("Save As…")
+        self.save_as_pdf_btn.clicked.connect(self.save_as_last_pdf)
+        self.open_folder_btn = QPushButton("Open Folder")
+        self.open_folder_btn.clicked.connect(self.open_invoices_folder)
+
+        for btn in [
+            self.open_pdf_btn,
+            self.print_pdf_btn,
+            self.save_as_pdf_btn,
+            self.open_folder_btn,
+        ]:
+            actions_layout.addWidget(btn)
+
+        actions_layout.addStretch()
+
+        # Disabled until an invoice is generated
+        self.set_post_actions_enabled(False)
+
+        layout.addWidget(actions_group)
+
+    def set_post_actions_enabled(self, enabled: bool):
+        for btn in [
+            getattr(self, "open_pdf_btn", None),
+            getattr(self, "print_pdf_btn", None),
+            getattr(self, "save_as_pdf_btn", None),
+            getattr(self, "open_folder_btn", None),
+        ]:
+            if btn:
+                btn.setEnabled(enabled)
+
+    def setup_tab_order(self):
+        """Setup keyboard navigation order for billing fields."""
+        # Define navigation sequence
+        navigation_sequence = [
+            self.customer_name_edit,
+            self.customer_phone_edit,
+            self.customer_gstin_edit,
+            self.category_combo,
+            self.item_combo,  # Will be conditionally replaced with net_weight_spin for custom orders
+            self.description_edit,
+            self.hsn_edit,
+            self.rate_spin,
+            self.amount_spin,
+            self.override_total_spin,
+        ]
+
+        # Add to navigation
+        self.add_navigation_sequence(navigation_sequence)
+
+        # Add action shortcuts
+        self.add_action_shortcut(self.amount_spin, self.add_line_item)
+        self.add_action_shortcut(
+            self.override_total_spin, self.generate_invoice_with_confirmation
+        )
+
+        # Update tooltips
+        self.customer_name_edit.setToolTip(
+            create_shortcut_tooltip(
+                "Enter customer name", "Enter to move to next field"
+            )
+        )
+        self.customer_phone_edit.setToolTip(
+            create_shortcut_tooltip(
+                "Optional phone number", "Enter to move to next field"
+            )
+        )
+        self.customer_gstin_edit.setToolTip(
+            create_shortcut_tooltip("Optional GSTIN", "Enter to move to next field")
+        )
+        self.category_combo.setToolTip(
+            create_shortcut_tooltip("Choose category", "Enter to move to next field")
+        )
+        self.item_combo.setToolTip(
+            create_shortcut_tooltip(
+                "Pick item by weight", "Enter to move to next field"
+            )
+        )
+        self.description_edit.setToolTip(
+            create_shortcut_tooltip("Item description", "Enter to move to next field")
+        )
+        self.hsn_edit.setToolTip(
+            create_shortcut_tooltip("HSN/SAC Code", "Enter to move to next field")
+        )
+        self.rate_spin.setToolTip(
+            create_shortcut_tooltip("Rate per gram", "Enter to move to next field")
+        )
+        self.amount_spin.setToolTip(
+            create_shortcut_tooltip("Total amount", "Enter to add item")
+        )
+        self.override_total_spin.setToolTip(
+            create_shortcut_tooltip("Override final total", "Enter to generate invoice")
+        )
 
     def load_data(self):
         """Load data for dropdowns."""
@@ -518,6 +740,31 @@ class BillingTab(QWidget):
         else:
             # For stock items, weight is set by selection and not editable
             self.net_weight_spin.setEnabled(False)
+
+        # Update navigation sequence based on custom order state
+        if hasattr(self, "enter_filter"):
+            self.update_navigation_for_custom_order(checked)
+
+    def update_navigation_for_custom_order(self, is_custom):
+        """Update navigation sequence based on custom order state."""
+        # Clear current navigation
+        self.enter_filter.navigation_widgets.clear()
+
+        # Rebuild navigation sequence
+        navigation_sequence = [
+            self.customer_name_edit,
+            self.customer_phone_edit,
+            self.customer_gstin_edit,
+            self.category_combo,
+            self.net_weight_spin if is_custom else self.item_combo,
+            self.description_edit,
+            self.hsn_edit,
+            self.rate_spin,
+            self.amount_spin,
+            self.override_total_spin,
+        ]
+
+        self.add_navigation_sequence(navigation_sequence)
 
     def calculate_line_total(self):
         """Calculate line total when weight or rate changes."""
@@ -879,42 +1126,128 @@ class BillingTab(QWidget):
                 invoice_data, self.line_items
             )
 
-            # Show warnings if any
-            if warnings:
-                warning_text = "Invoice created but with warnings:\n\n" + "\n".join(
-                    warnings
-                )
-                QMessageBox.warning(self, "Warnings", warning_text)
+            # Auto-save PDF to default invoices folder from settings
+            invoices_root = self.settings.get("invoice", {}).get(
+                "default_save_path", "invoices"
+            )
+            invoices_dir = Path(invoices_root)
+            invoices_dir.mkdir(parents=True, exist_ok=True)
+            output_path = invoices_dir / f"invoice_{invoice_data['invoice_number']}.pdf"
 
-            # Generate PDF
-            filename, _ = QFileDialog.getSaveFileName(
-                self,
-                "Save Invoice PDF",
-                f"invoice_{invoice_data['invoice_number']}.pdf",
-                "PDF Files (*.pdf)",
+            self.pdf_generator.generate_invoice_pdf(
+                str(output_path), invoice_data, self.line_items
             )
 
-            if filename:
-                self.pdf_generator.generate_invoice_pdf(
-                    filename, invoice_data, self.line_items
-                )
+            # Store last outputs for toolbar actions
+            self.last_pdf_path = str(output_path)
+            self.last_invoice_data = dict(invoice_data)
+            self.last_line_items = list(self.line_items)
 
-                success_msg = (
-                    f"Invoice {invoice_data['invoice_number']} generated successfully!"
-                )
-                if warnings:
-                    success_msg += "\n\nNote: Check warnings for stock issues."
+            # Enable post actions
+            self.set_post_actions_enabled(True)
 
-                QMessageBox.information(self, "Success", success_msg)
+            # Update status label
+            msg = f"Invoice {invoice_data['invoice_number']} saved to {output_path}"
+            if warnings:
+                msg += " — Warnings: " + "; ".join(warnings)
+            self.post_actions_status_label.setText(msg)
 
-                # Emit signal
-                self.invoice_created.emit(invoice_id, invoice_data["invoice_number"])
+            # Optional success dialog based on settings
+            if self.settings.get("invoice", {}).get("show_success_dialog", False):
+                QMessageBox.information(self, "Invoice Saved", msg)
 
-                # Reload data to refresh stock quantities
-                self.load_data()
-
-                # Start new invoice
-                self.new_invoice()
+            # Signal + refresh + prepare new invoice
+            self.invoice_created.emit(invoice_id, invoice_data["invoice_number"])
+            self.load_data()
+            self.new_invoice()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error generating invoice: {str(e)}")
+
+    def generate_invoice_with_confirmation(self):
+        """Generate invoice; only prompt if settings require confirmation."""
+        if not self.line_items:
+            QMessageBox.warning(
+                self, "Warning", "Please add at least one item to generate invoice."
+            )
+            return
+
+        customer_name = self.customer_name_edit.text().strip()
+        if not customer_name:
+            QMessageBox.warning(self, "Warning", "Please enter customer name.")
+            self.customer_name_edit.setFocus()
+            return
+
+        require_confirm = self.settings.get("invoice", {}).get(
+            "require_confirmation", False
+        )
+        if not require_confirm:
+            self.generate_invoice()
+            return
+
+        # Calculate totals for confirmation
+        try:
+            totals = self.calculator.calculate_invoice_totals(self.line_items)
+            final_total = float(totals["final_total"])
+            if self.override_total_spin.value() > 0:
+                final_total = self.override_total_spin.value()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error calculating totals: {str(e)}")
+            return
+
+        message = (
+            f"Generate invoice for {customer_name}?\n\n"
+            f"Items: {len(self.line_items)}\n"
+            f"Total Amount: ₹{final_total:.2f}\n\n"
+            f"This will deduct stock quantities!"
+        )
+        detailed_message = (
+            "Stock will be automatically reduced for all items.\n"
+            "Invoice will be saved to database.\n"
+            "PDF will be generated for printing/sharing."
+        )
+        if not ConfirmationDialog.confirm_action(
+            self, "Generate Invoice", message, detailed_message
+        ):
+            return
+        self.generate_invoice()
+
+    # Post-action handlers
+    def open_last_pdf(self):
+        if self.last_pdf_path and os.path.exists(self.last_pdf_path):
+            try:
+                os.startfile(self.last_pdf_path)
+            except Exception as e:
+                QMessageBox.warning(self, "Open PDF", f"Unable to open: {e}")
+
+    def print_last_pdf(self):
+        if self.last_pdf_path and os.path.exists(self.last_pdf_path):
+            try:
+                os.startfile(self.last_pdf_path, "print")
+            except Exception as e:
+                QMessageBox.warning(self, "Print", f"Unable to print: {e}")
+
+    def save_as_last_pdf(self):
+        if self.last_pdf_path and os.path.exists(self.last_pdf_path):
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Invoice As",
+                self.last_pdf_path,
+                "PDF Files (*.pdf)",
+            )
+            if filename and self.last_invoice_data and self.last_line_items is not None:
+                try:
+                    self.pdf_generator.generate_invoice_pdf(
+                        filename, self.last_invoice_data, self.last_line_items
+                    )
+                except Exception as e:
+                    QMessageBox.warning(self, "Save As", f"Unable to save: {e}")
+
+    def open_invoices_folder(self):
+        invoices_root = self.settings.get("invoice", {}).get(
+            "default_save_path", "invoices"
+        )
+        try:
+            os.startfile(str(Path(invoices_root)))
+        except Exception as e:
+            QMessageBox.warning(self, "Open Folder", f"Unable to open folder: {e}")

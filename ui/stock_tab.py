@@ -33,8 +33,9 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QScrollArea,
+    QCompleter,
 )
-from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer, QThread
+from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer, QThread, QStringListModel
 from PyQt5.QtGui import QFont, QPixmap, QPainter, QPen, QBrush
 from decimal import Decimal
 import csv
@@ -42,9 +43,15 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from logic.database_manager import SupabaseDatabaseManager as UnifiedDatabaseManager
+from logic.label_printer import LabelPrinter
+from ui.keyboard_navigation import (
+    KeyboardNavigationMixin,
+    ConfirmationDialog,
+    create_shortcut_tooltip,
+)
 
 
-class StockTab(QWidget):
+class StockTab(QWidget, KeyboardNavigationMixin):
     """Stock management tab widget."""
 
     # Signals
@@ -62,8 +69,12 @@ class StockTab(QWidget):
         self.categories = []
         self.suppliers = []
 
+        # Initialize label printer
+        self.label_printer = LabelPrinter()
+
         # Setup UI
         self.init_ui()
+        self.setup_keyboard_navigation()
         self.load_data()
 
     def init_ui(self):
@@ -100,12 +111,54 @@ class StockTab(QWidget):
 
         layout.addWidget(self.tab_widget)
 
-    def on_category_name_sync(self, text: str):
-        """Keep the product name in sync with selected category."""
-        if text and text != "Select Category":
-            self.product_name_edit.setText(text)
-        else:
-            self.product_name_edit.clear()
+    def setup_tab_order(self):
+        """Setup keyboard navigation order for stock management fields."""
+        # Note: Stock tab uses multiple tabs, so setup navigation for each tab separately
+        # This is a placeholder implementation for the main fields
+        if hasattr(self, "product_category_combo"):
+            navigation_sequence = [
+                self.product_category_combo,
+                self.product_desc_edit,
+                self.product_hsn_edit,
+                self.product_supplier_combo,
+                self.product_gross_weight_spin,
+                self.product_net_weight_spin,
+            ]
+
+            # Add to navigation
+            self.add_navigation_sequence(navigation_sequence)
+
+            # Add action shortcuts for add product button
+            if hasattr(self, "add_product_btn"):
+                self.add_action_shortcut(
+                    self.product_net_weight_spin, self.add_product_with_confirmation
+                )
+                self.add_product_btn.setToolTip(
+                    create_shortcut_tooltip(
+                        "Add new product to inventory",
+                        "Enter (when net weight field is focused)",
+                    )
+                )
+
+    def setup_hsn_autocomplete(self):
+        """Setup HSN code autocomplete from history."""
+        try:
+            # Get HSN history from database
+            hsn_history = self.db.get_hsn_code_history()
+            hsn_codes = [
+                item["hsn_code"] for item in hsn_history if item.get("hsn_code")
+            ]
+
+            # Create completer
+            self.hsn_completer = QCompleter(hsn_codes)
+            self.hsn_completer.setCaseSensitivity(Qt.CaseInsensitive)
+            self.hsn_completer.setCompletionMode(QCompleter.PopupCompletion)
+
+            # Apply to HSN edit field
+            self.product_hsn_edit.setCompleter(self.hsn_completer)
+
+        except Exception as e:
+            print(f"Warning: Could not setup HSN autocomplete: {e}")
 
     def create_products_tab(self):
         """Create products management tab."""
@@ -119,31 +172,25 @@ class StockTab(QWidget):
         add_group = QGroupBox("Add New Product")
         add_layout = QGridLayout(add_group)
 
-        # Row 0: Product name and description
-        add_layout.addWidget(QLabel("Category (Name):"), 0, 0)
-        self.product_name_edit = QLineEdit()
-        self.product_name_edit.setPlaceholderText("Auto-filled from Category")
-        self.product_name_edit.setReadOnly(True)
-        add_layout.addWidget(self.product_name_edit, 0, 1)
+        # Row 0: Category and Description
+        add_layout.addWidget(QLabel("Category:"), 0, 0)
+        self.product_category_combo = QComboBox()
+        add_layout.addWidget(self.product_category_combo, 0, 1)
 
         add_layout.addWidget(QLabel("Description:"), 0, 2)
         self.product_desc_edit = QLineEdit()
         self.product_desc_edit.setPlaceholderText("Optional description")
         add_layout.addWidget(self.product_desc_edit, 0, 3)
 
-        # Row 1: HSN Code and Category
+        # Row 1: HSN Code and Supplier
         add_layout.addWidget(QLabel("HSN Code:"), 1, 0)
         self.product_hsn_edit = QLineEdit()
         self.product_hsn_edit.setPlaceholderText("HSN/SAC Code")
         add_layout.addWidget(self.product_hsn_edit, 1, 1)
 
-        add_layout.addWidget(QLabel("Category:"), 1, 2)
-        self.product_category_combo = QComboBox()
-        add_layout.addWidget(self.product_category_combo, 1, 3)
-        # Sync product name from category selection
-        self.product_category_combo.currentTextChanged.connect(
-            self.on_category_name_sync
-        )
+        add_layout.addWidget(QLabel("Supplier:"), 1, 2)
+        self.product_supplier_combo = QComboBox()
+        add_layout.addWidget(self.product_supplier_combo, 1, 3)
 
         # Row 2: Weights
         add_layout.addWidget(QLabel("Gross Weight (g):"), 2, 0)
@@ -158,8 +205,7 @@ class StockTab(QWidget):
         self.product_net_weight_spin.setRange(0.001, 99999.999)
         add_layout.addWidget(self.product_net_weight_spin, 2, 3)
 
-        # Row 3: Quantity, Price, Melting %
-        # Quantity removed for this workflow – hide control & label
+        # Row 3: Quantity (hidden) and Melting %
         add_layout.addWidget(QLabel("Quantity:"), 3, 0)
         self.product_quantity_spin = QSpinBox()
         self.product_quantity_spin.setRange(0, 999999)
@@ -173,11 +219,6 @@ class StockTab(QWidget):
         except Exception:
             pass
         self.product_quantity_spin.hide()
-
-        # Row 3: Supplier and Melting %
-        add_layout.addWidget(QLabel("Supplier:"), 3, 0)
-        self.product_supplier_combo = QComboBox()
-        add_layout.addWidget(self.product_supplier_combo, 3, 1)
 
         add_layout.addWidget(QLabel("Melting %:"), 3, 2)
         self.product_melting_spin = QDoubleSpinBox()
@@ -272,7 +313,7 @@ class StockTab(QWidget):
             [
                 "ID",
                 "Name",
-                "Description", 
+                "Description",
                 "Category",
                 "Gross Weight",
                 "Net Weight",
@@ -470,13 +511,47 @@ class StockTab(QWidget):
 
         # Summary header
         header_group = QGroupBox("📈 Inventory Summary")
-        header_layout = QVBoxLayout(header_group)
+        header_layout = QHBoxLayout(header_group)
 
         # Refresh button
         refresh_btn = QPushButton("🔄 Refresh Summary")
         refresh_btn.clicked.connect(self.load_inventory_summary)
         refresh_btn.setMaximumWidth(200)
         header_layout.addWidget(refresh_btn)
+
+        # Export category-wise button
+        export_cat_btn = QPushButton("📊 Export Category-wise CSV")
+        export_cat_btn.clicked.connect(self.export_category_wise_csv)
+        export_cat_btn.setMaximumWidth(250)
+        header_layout.addWidget(export_cat_btn)
+
+        # Export total summary button
+        export_summary_btn = QPushButton("📋 Export Total Summary CSV")
+        export_summary_btn.clicked.connect(self.export_total_summary_csv)
+        export_summary_btn.setMaximumWidth(250)
+        header_layout.addWidget(export_summary_btn)
+
+        # Print Labels button
+        print_labels_btn = QPushButton("🏷️ Print Labels")
+        print_labels_btn.clicked.connect(self.print_labels_dialog)
+        print_labels_btn.setMaximumWidth(200)
+        print_labels_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #2E8B57;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3CB371;
+            }
+        """
+        )
+        header_layout.addWidget(print_labels_btn)
+
+        header_layout.addStretch()
 
         layout.addWidget(header_group)
 
@@ -491,7 +566,13 @@ class StockTab(QWidget):
         self.category_summary_table = QTableWidget()
         self.category_summary_table.setColumnCount(5)
         self.category_summary_table.setHorizontalHeaderLabels(
-            ["Sr. No.", "Category", "Total Items", "Available Items", "Total Weight (g)"]
+            [
+                "Sr. No.",
+                "Category",
+                "Total Items",
+                "Available Items",
+                "Total Weight (g)",
+            ]
         )
 
         # Configure category summary table
@@ -577,6 +658,9 @@ class StockTab(QWidget):
                 ["All Suppliers"]
                 + [f"{sup['name']} ({sup['code']})" for sup in self.suppliers]
             )
+
+            # Setup HSN autocomplete
+            self.setup_hsn_autocomplete()
 
             # Load products
             self.load_products()
@@ -759,15 +843,15 @@ class StockTab(QWidget):
         try:
             # Get category summary data using new view
             category_summary = self.db.get_category_summary()
-            
+
             # Update category summary table
             self.category_summary_table.setRowCount(len(category_summary))
-            
+
             total_available_items = 0
             total_sold_items = 0
             total_gross_weight = 0.0
             total_net_weight = 0.0
-            
+
             for row, summary in enumerate(category_summary):
                 # Sr. No.
                 self.category_summary_table.setItem(
@@ -776,17 +860,17 @@ class StockTab(QWidget):
 
                 # Category Name
                 self.category_summary_table.setItem(
-                    row, 1, QTableWidgetItem(summary['category_name'])
+                    row, 1, QTableWidgetItem(summary["category_name"])
                 )
 
                 # Total Items
                 self.category_summary_table.setItem(
-                    row, 2, QTableWidgetItem(str(summary['total_items']))
+                    row, 2, QTableWidgetItem(str(summary["total_items"]))
                 )
 
                 # Available Items
                 self.category_summary_table.setItem(
-                    row, 3, QTableWidgetItem(str(summary['available_items']))
+                    row, 3, QTableWidgetItem(str(summary["available_items"]))
                 )
 
                 # Total Weight (Net Weight)
@@ -795,21 +879,31 @@ class StockTab(QWidget):
                 )
 
                 # Add to totals
-                total_available_items += summary['available_items']
-                total_sold_items += summary['sold_items']
-                total_gross_weight += float(summary['available_gross_weight'])
-                total_net_weight += float(summary['available_net_weight'])
+                total_available_items += summary["available_items"]
+                total_sold_items += summary["sold_items"]
+                total_gross_weight += float(summary["available_gross_weight"])
+                total_net_weight += float(summary["available_net_weight"])
 
             # Get total summary
             total_summary = self.db.get_total_summary()
-            
+
             # Update total summary labels
             self.total_categories_label.setText(str(len(category_summary)))
-            self.total_products_label.setText(str(total_summary.get('total_available_items', 0) + 
-                                                  total_summary.get('total_sold_items', 0)))
-            self.total_available_label.setText(str(total_summary.get('total_available_items', 0)))
-            self.total_gross_weight_label.setText(f"{total_summary.get('total_available_gross_weight', 0):.3f} g")
-            self.total_net_weight_label.setText(f"{total_summary.get('total_available_net_weight', 0):.3f} g")
+            self.total_products_label.setText(
+                str(
+                    total_summary.get("total_available_items", 0)
+                    + total_summary.get("total_sold_items", 0)
+                )
+            )
+            self.total_available_label.setText(
+                str(total_summary.get("total_available_items", 0))
+            )
+            self.total_gross_weight_label.setText(
+                f"{total_summary.get('total_available_gross_weight', 0):.3f} g"
+            )
+            self.total_net_weight_label.setText(
+                f"{total_summary.get('total_available_net_weight', 0):.3f} g"
+            )
 
         except Exception as e:
             QMessageBox.warning(
@@ -889,8 +983,12 @@ class StockTab(QWidget):
         """Update inventory summary."""
         try:
             total_products = len(self.products)
-            total_available = len([p for p in self.products if p["status"] == "AVAILABLE"])
-            low_stock_count = 0  # In serialized inventory, low stock is when category has < 5 items
+            total_available = len(
+                [p for p in self.products if p["status"] == "AVAILABLE"]
+            )
+            low_stock_count = (
+                0  # In serialized inventory, low stock is when category has < 5 items
+            )
 
             self.total_products_label.setText(f"Total Products: {total_products}")
             self.total_available_label.setText(f"Available Items: {total_available}")
@@ -956,10 +1054,10 @@ class StockTab(QWidget):
             # Validate inputs
             selected_category = self.product_category_combo.currentText()
             if not selected_category or selected_category == "Select Category":
-                QMessageBox.warning(
-                    self, "Warning", "Please select a category (used as product name)."
-                )
+                QMessageBox.warning(self, "Warning", "Please select a category.")
                 return
+
+            # Category name is used as the product name
             name = selected_category
 
             gross_weight = self.product_gross_weight_spin.value()
@@ -994,22 +1092,21 @@ class StockTab(QWidget):
                         supplier_id = sup["id"]
                         break
 
-            # Add product to database
+            # Add product to database (name parameter is ignored, category is used)
             product_id = self.db.add_product(
-                name=name,
+                name=name,  # This will be ignored by the database manager
                 description=self.product_desc_edit.text().strip() or None,
                 hsn_code=self.product_hsn_edit.text().strip() or None,
                 gross_weight=gross_weight,
                 net_weight=net_weight,
-                # No explicit quantity management; default to 1 unit
-                quantity=1,
+                quantity=1,  # Always 1 for serialized inventory
                 supplier_id=supplier_id,
                 category_id=category_id,
                 melting_percentage=self.product_melting_spin.value(),
             )
 
             QMessageBox.information(
-                self, "Success", f"Product '{name}' added successfully!"
+                self, "Success", f"Product added to category '{name}' successfully!"
             )
 
             # Clear form
@@ -1019,6 +1116,7 @@ class StockTab(QWidget):
             self.load_products()
             self.load_inventory_summary()  # Refresh inventory summary
             self.update_summary()
+            self.setup_hsn_autocomplete()  # Refresh HSN autocomplete
 
             # Emit signal
             self.product_added.emit(product_id, name)
@@ -1028,7 +1126,6 @@ class StockTab(QWidget):
 
     def clear_product_form(self):
         """Clear the product form."""
-        self.product_name_edit.clear()
         self.product_desc_edit.clear()
         self.product_hsn_edit.clear()
         self.product_category_combo.setCurrentIndex(0)
@@ -1037,6 +1134,28 @@ class StockTab(QWidget):
         self.product_quantity_spin.setValue(1)
         self.product_supplier_combo.setCurrentIndex(0)
         self.product_melting_spin.setValue(0.0)
+
+    def add_product_with_confirmation(self):
+        """Add product with confirmation dialog."""
+        # Get values for confirmation
+        selected_category = self.product_category_combo.currentText()
+        gross_weight = self.product_gross_weight_spin.value()
+        net_weight = self.product_net_weight_spin.value()
+
+        if not selected_category or selected_category == "Select Category":
+            QMessageBox.warning(self, "Warning", "Please select a category first.")
+            self.product_category_combo.setFocus()
+            return
+
+        message = (
+            f"Add new product to inventory?\n\n"
+            f"Category/Name: {selected_category}\n"
+            f"Gross Weight: {gross_weight}g\n"
+            f"Net Weight: {net_weight}g"
+        )
+
+        if ConfirmationDialog.confirm_action(self, "Add Product", message):
+            self.add_product()
 
     def edit_product(self, product_id):
         """Edit a product."""
@@ -1556,3 +1675,290 @@ class StockTab(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error exporting products: {str(e)}")
+
+    def export_category_wise_csv(self):
+        """Export category-wise inventory to CSV."""
+        try:
+            # Create dialog to select category
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Select Category to Export")
+            dialog.setModal(True)
+            dialog.resize(400, 150)
+
+            layout = QVBoxLayout(dialog)
+
+            layout.addWidget(QLabel("Select category to export:"))
+            category_combo = QComboBox()
+            category_combo.addItems([cat["name"] for cat in self.categories])
+            layout.addWidget(category_combo)
+
+            button_layout = QHBoxLayout()
+            export_btn = QPushButton("Export")
+            cancel_btn = QPushButton("Cancel")
+            button_layout.addWidget(export_btn)
+            button_layout.addWidget(cancel_btn)
+            layout.addLayout(button_layout)
+
+            cancel_btn.clicked.connect(dialog.reject)
+
+            def do_export():
+                selected_category = category_combo.currentText()
+                # Find category ID
+                category_id = None
+                for cat in self.categories:
+                    if cat["name"] == selected_category:
+                        category_id = cat["id"]
+                        break
+
+                if not category_id:
+                    QMessageBox.warning(
+                        dialog, "Error", "Please select a valid category"
+                    )
+                    return
+
+                # Get filename
+                filename, _ = QFileDialog.getSaveFileName(
+                    dialog,
+                    "Export Category-wise CSV",
+                    f"category_{selected_category}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    "CSV Files (*.csv)",
+                )
+
+                if filename:
+                    success = self.db.export_category_wise_csv(category_id, filename)
+                    if success:
+                        QMessageBox.information(
+                            dialog, "Success", f"Category data exported to {filename}"
+                        )
+                        dialog.accept()
+                    else:
+                        QMessageBox.warning(
+                            dialog, "Error", "Failed to export category data"
+                        )
+
+            export_btn.clicked.connect(do_export)
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", f"Error exporting category CSV: {str(e)}"
+            )
+
+    def export_total_summary_csv(self):
+        """Export total summary to CSV."""
+        try:
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Total Summary CSV",
+                f"inventory_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "CSV Files (*.csv)",
+            )
+
+            if filename:
+                success = self.db.export_total_summary_csv(filename)
+                if success:
+                    QMessageBox.information(
+                        self, "Success", f"Inventory summary exported to {filename}"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self, "Error", "Failed to export inventory summary"
+                    )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", f"Error exporting summary CSV: {str(e)}"
+            )
+
+    def print_labels_dialog(self):
+        """Show dialog to select label printing options."""
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Print Item Labels")
+            dialog.setModal(True)
+            dialog.resize(550, 400)
+
+            layout = QVBoxLayout(dialog)
+
+            # Title
+            title_label = QLabel("🏷️ Print Labels for Inventory Items")
+            title_label.setStyleSheet(
+                "font-size: 14px; font-weight: bold; margin: 10px;"
+            )
+            layout.addWidget(title_label)
+
+            # Options group
+            options_group = QGroupBox("Select Items to Print Labels")
+            options_layout = QVBoxLayout(options_group)
+
+            # Radio buttons for selection
+            self.print_all_radio = QCheckBox("Print labels for ALL available items")
+            options_layout.addWidget(self.print_all_radio)
+
+            # Category selection
+            category_layout = QHBoxLayout()
+            self.print_category_radio = QCheckBox("Print labels for specific category:")
+            category_layout.addWidget(self.print_category_radio)
+
+            self.print_category_combo = QComboBox()
+            self.print_category_combo.addItems([cat["name"] for cat in self.categories])
+            self.print_category_combo.setEnabled(False)
+            category_layout.addWidget(self.print_category_combo)
+            options_layout.addLayout(category_layout)
+
+            # Single item selection
+            item_layout = QHBoxLayout()
+            self.print_item_radio = QCheckBox("Print label for specific item:")
+            item_layout.addWidget(self.print_item_radio)
+
+            self.print_item_combo = QComboBox()
+            self.print_item_combo.setEnabled(False)
+            # Populate with available items
+            available_items = [
+                p for p in self.products if p.get("status") == "AVAILABLE"
+            ]
+            for item in available_items:
+                cat_item_id = item.get("category_item_id")
+                if cat_item_id:
+                    display_name = f"{item['category_name']} #{cat_item_id} - {item['net_weight']:.3f}g"
+                else:
+                    display_name = f"{item['name']} - {item['net_weight']:.3f}g"
+                self.print_item_combo.addItem(display_name, item["id"])
+            item_layout.addWidget(self.print_item_combo)
+            options_layout.addLayout(item_layout)
+
+            # Enable/disable combos based on radio selection
+            self.print_category_radio.toggled.connect(
+                lambda checked: self.print_category_combo.setEnabled(checked)
+            )
+            self.print_item_radio.toggled.connect(
+                lambda checked: self.print_item_combo.setEnabled(checked)
+            )
+
+            layout.addWidget(options_group)
+
+            # Info label
+            info_label = QLabel(
+                "📌 Labels will include: Serial Number, Net Weight, and Supplier Code\n"
+                "📄 Tag size: 55mm x 30mm with tie hole for attaching to items"
+            )
+            info_label.setStyleSheet("color: #666; margin: 10px; font-size: 11px;")
+            layout.addWidget(info_label)
+
+            # Buttons
+            button_layout = QHBoxLayout()
+
+            print_btn = QPushButton("🖨️ Generate Labels PDF")
+            print_btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #2E8B57;
+                    color: white;
+                    font-weight: bold;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #3CB371;
+                }
+            """
+            )
+            print_btn.clicked.connect(lambda: self.generate_labels(dialog))
+            button_layout.addWidget(print_btn)
+
+            cancel_btn = QPushButton("Cancel")
+            cancel_btn.clicked.connect(dialog.reject)
+            button_layout.addWidget(cancel_btn)
+
+            layout.addLayout(button_layout)
+
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error opening label dialog: {str(e)}")
+
+    def generate_labels(self, dialog: QDialog):
+        """Generate label PDF based on selected options."""
+        try:
+            # Determine what to print
+            if self.print_all_radio.isChecked():
+                # Print all items
+                output_file = self.label_printer.generate_labels_for_all_inventory(
+                    self.db,
+                    filename=f"all_labels_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                )
+                message = "Labels generated for all inventory items!"
+
+            elif self.print_category_radio.isChecked():
+                # Print category items
+                selected_category = self.print_category_combo.currentText()
+
+                # Find category ID
+                category_id = None
+                for cat in self.categories:
+                    if cat["name"] == selected_category:
+                        category_id = cat["id"]
+                        break
+
+                if not category_id:
+                    QMessageBox.warning(
+                        dialog, "Error", "Please select a valid category"
+                    )
+                    return
+
+                output_file = self.label_printer.generate_labels_for_category(
+                    self.db,
+                    category_id,
+                    filename=f"labels_{selected_category}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                )
+                message = f"Labels generated for category '{selected_category}'!"
+
+            elif self.print_item_radio.isChecked():
+                # Print single item
+                item_id = self.print_item_combo.currentData()
+                item_name = self.print_item_combo.currentText()
+
+                if not item_id:
+                    QMessageBox.warning(dialog, "Error", "Please select a valid item")
+                    return
+
+                output_file = self.label_printer.generate_label_for_item(
+                    self.db,
+                    item_id,
+                    filename=f"label_item_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                )
+                message = f"Label generated for item: {item_name}!"
+
+            else:
+                QMessageBox.warning(dialog, "Warning", "Please select an option")
+                return
+
+            # Show success message with option to open file
+            result = QMessageBox.information(
+                dialog,
+                "Success",
+                f"{message}\n\nFile saved to: {output_file}\n\nWould you like to open the PDF?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+
+            if result == QMessageBox.Yes:
+                # Open the PDF file
+                import os
+                import subprocess
+
+                if os.name == "nt":  # Windows
+                    os.startfile(output_file)
+                elif os.name == "posix":  # macOS and Linux
+                    subprocess.call(
+                        [
+                            "open" if os.uname().sysname == "Darwin" else "xdg-open",
+                            output_file,
+                        ]
+                    )
+
+            dialog.accept()
+
+        except ValueError as ve:
+            QMessageBox.warning(dialog, "Warning", str(ve))
+        except Exception as e:
+            QMessageBox.critical(dialog, "Error", f"Error generating labels: {str(e)}")

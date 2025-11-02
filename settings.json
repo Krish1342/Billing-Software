@@ -1,22 +1,51 @@
 {
-  "company": {
-    "name": "Roopkala Jewellers",
-    "address_line1": "123 Main Street",
-    "address_line2": "Jewellery Market, City - 400001",
-    "phone": "+91 98765 43210",
-    "email": "info@roopkalajewellers.com",
-    "gstin": "27AAAAA0000A1Z5"
-  },
-  "tax": {
-    "cgst_rate": "1.5",
-    "sgst_rate": "1.5"
-  },
-  "invoice": {
-    "prefix": "RKJ",
-    "starting_number": 1001
-  },
-  "precision": {
-    "quantity_decimals": 3,
-    "money_decimals": 2
-  }
+    "company": {
+        "name": "Roopkala Jewellers",
+        "address": "",
+        "city": "",
+        "state": "",
+        "pincode": "",
+        "gstin": "27AAAAA0000A1Z5",
+        "phone": "+91 98765 43210",
+        "email": "info@roopkalajewellers.com",
+        "logo_path": "",
+        "bank": {
+            "name": "",
+            "account_number": "",
+            "ifsc_code": "",
+            "branch": ""
+        }
+    },
+    "tax": {
+        "cgst_rate": "1.5",
+        "sgst_rate": "1.5",
+        "tax_inclusive": false,
+        "round_to_nearest": false,
+        "default_hsn_codes": [
+            "715"
+        ]
+    },
+    "invoice": {
+        "prefix": "RKJ",
+        "starting_number": 1001,
+        "default_save_path": "invoices",
+        "require_confirmation": false,
+        "show_success_dialog": false
+    },
+    "precision": {
+        "quantity_decimals": 3,
+        "money_decimals": 2
+    },
+    "app": {
+        "theme": "light",
+        "font_size": "medium",
+        "currency_symbol": "\u20b9",
+        "date_format": "DD/MM/YYYY",
+        "auto_save": true,
+        "backup_enabled": true,
+        "show_notifications": true,
+        "confirm_delete": true,
+        "backup_frequency": "Weekly",
+        "backup_location": ""
+    }
 }

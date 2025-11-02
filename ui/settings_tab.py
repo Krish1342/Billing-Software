@@ -28,8 +28,9 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 import json
 import os
+from datetime import datetime
 
-from logic.database_manager import UnifiedDatabaseManager
+from logic.local_database_manager import LocalDatabaseManager
 
 
 class SettingsTab(QWidget):
@@ -40,7 +41,7 @@ class SettingsTab(QWidget):
 
     def __init__(
         self,
-        db: UnifiedDatabaseManager,
+        db: LocalDatabaseManager,
         settings: dict,
         settings_path: str = "settings.json",
     ):
@@ -296,6 +297,29 @@ class SettingsTab(QWidget):
 
         layout.addWidget(display_group)
 
+        # Invoice settings group
+        invoice_group = QGroupBox("Invoice Settings")
+        invoice_layout = QGridLayout(invoice_group)
+
+        invoice_layout.addWidget(QLabel("Default Save Folder:"), 0, 0)
+        self.invoice_save_path_edit = QLineEdit()
+        invoice_layout.addWidget(self.invoice_save_path_edit, 0, 1, 1, 2)
+        browse_invoice_btn = QPushButton("Browse…")
+        browse_invoice_btn.clicked.connect(self.browse_invoice_save_path)
+        invoice_layout.addWidget(browse_invoice_btn, 0, 3)
+
+        self.invoice_require_confirm_check = QCheckBox(
+            "Require confirmation before generating invoice"
+        )
+        invoice_layout.addWidget(self.invoice_require_confirm_check, 1, 0, 1, 4)
+
+        self.invoice_show_success_check = QCheckBox(
+            "Show success dialog after generation"
+        )
+        invoice_layout.addWidget(self.invoice_show_success_check, 2, 0, 1, 4)
+
+        layout.addWidget(invoice_group)
+
         # Backup settings group
         backup_group = QGroupBox("Backup Settings")
         backup_layout = QGridLayout(backup_group)
@@ -341,7 +365,7 @@ class SettingsTab(QWidget):
                 cursor = conn.cursor()
 
                 # Get table counts
-                cursor.execute("SELECT COUNT(*) FROM products")
+                cursor.execute("SELECT COUNT(*) FROM inventory")
                 product_count = cursor.fetchone()[0]
 
                 cursor.execute("SELECT COUNT(*) FROM categories")
@@ -350,7 +374,7 @@ class SettingsTab(QWidget):
                 cursor.execute("SELECT COUNT(*) FROM suppliers")
                 supplier_count = cursor.fetchone()[0]
 
-                cursor.execute("SELECT COUNT(*) FROM invoices")
+                cursor.execute("SELECT COUNT(*) FROM bills")
                 invoice_count = cursor.fetchone()[0]
 
                 info_layout.addWidget(QLabel("Products:"), 2, 0)
@@ -512,6 +536,18 @@ class SettingsTab(QWidget):
             backup_location = app.get("backup_location", "")
             self.backup_location_edit.setText(backup_location)
 
+            # Invoice settings
+            invoice = self.settings.get("invoice", {})
+            self.invoice_save_path_edit.setText(
+                invoice.get("default_save_path", "invoices")
+            )
+            self.invoice_require_confirm_check.setChecked(
+                invoice.get("require_confirmation", False)
+            )
+            self.invoice_show_success_check.setChecked(
+                invoice.get("show_success_dialog", False)
+            )
+
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error loading settings: {str(e)}")
 
@@ -538,6 +574,12 @@ class SettingsTab(QWidget):
         directory = QFileDialog.getExistingDirectory(self, "Select Backup Directory")
         if directory:
             self.backup_location_edit.setText(directory)
+
+    def browse_invoice_save_path(self):
+        """Browse for default invoice save folder."""
+        directory = QFileDialog.getExistingDirectory(self, "Select Invoices Folder")
+        if directory:
+            self.invoice_save_path_edit.setText(directory)
 
     def save_settings(self):
         """Save settings to file."""
@@ -585,6 +627,18 @@ class SettingsTab(QWidget):
                 "backup_frequency": self.backup_frequency_combo.currentText(),
                 "backup_location": self.backup_location_edit.text().strip(),
             }
+
+            # Invoice settings
+            inv = self.settings.get("invoice", {})
+            inv.update(
+                {
+                    "default_save_path": self.invoice_save_path_edit.text().strip()
+                    or "invoices",
+                    "require_confirmation": self.invoice_require_confirm_check.isChecked(),
+                    "show_success_dialog": self.invoice_show_success_check.isChecked(),
+                }
+            )
+            self.settings["invoice"] = inv
 
             # Save to file
             with open(self.settings_path, "w") as f:
@@ -645,6 +699,13 @@ class SettingsTab(QWidget):
                     "confirm_delete": True,
                     "backup_frequency": "Weekly",
                     "backup_location": "",
+                },
+                "invoice": {
+                    "prefix": "RK",
+                    "start_number": 1001,
+                    "default_save_path": "invoices",
+                    "show_success_dialog": False,
+                    "require_confirmation": False,
                 },
             }
 
@@ -890,16 +951,15 @@ class SettingsTab(QWidget):
                         with self.db.get_connection() as conn:
                             cursor = conn.cursor()
 
-                            # Drop and recreate all tables
+                            # Clear all tables in correct order (SQLite schema)
                             tables = [
-                                "invoice_items",
-                                "invoices",
                                 "stock_movements",
-                                "products",
+                                "bill_items",
+                                "bills",
+                                "inventory",
                                 "customers",
                                 "suppliers",
                                 "categories",
-                                "history",
                             ]
 
                             for table in tables:

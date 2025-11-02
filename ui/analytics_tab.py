@@ -361,9 +361,12 @@ class AnalyticsTab(QWidget):
             self.total_sales_label.setText(f"Total Sales: ₹{total_sales:,.2f}")
             self.average_sale_label.setText(f"Average Sale: ₹{average_sale:,.2f}")
 
-            # Calculate total items sold
-            top_items = summary.get("top_items", [])
-            total_items_sold = sum(item.get("total_sold", 0) for item in top_items)
+            # Calculate total items sold - use the correct field name
+            total_items_sold = summary.get("total_items_sold", 0)
+            if total_items_sold == 0:
+                # Fallback: calculate from top_items if available
+                top_items = summary.get("top_items", [])
+                total_items_sold = sum(item.get("total_sold", 0) for item in top_items)
             self.total_items_sold_label.setText(f"Total Items Sold: {total_items_sold}")
 
             # Load recent invoices
@@ -371,12 +374,16 @@ class AnalyticsTab(QWidget):
             self.invoices_table.setRowCount(len(invoices))
 
             for row, invoice in enumerate(invoices):
-                self.invoices_table.setItem(
-                    row, 0, QTableWidgetItem(invoice["invoice_number"])
+                # Use the correct field name from database
+                invoice_number = invoice.get(
+                    "bill_number", invoice.get("invoice_number", "N/A")
                 )
-                self.invoices_table.setItem(
-                    row, 1, QTableWidgetItem(invoice["invoice_date"])
+                invoice_date = invoice.get(
+                    "bill_date", invoice.get("invoice_date", "N/A")
                 )
+
+                self.invoices_table.setItem(row, 0, QTableWidgetItem(invoice_number))
+                self.invoices_table.setItem(row, 1, QTableWidgetItem(invoice_date))
                 self.invoices_table.setItem(
                     row, 2, QTableWidgetItem(invoice["customer_name"])
                 )

@@ -41,6 +41,6 @@ Thumbs.db
 
 # PDFs generated
 invoices/*.pdf
-
+.env
 # Logs
 *.log

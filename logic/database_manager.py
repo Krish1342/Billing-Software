@@ -539,6 +539,20 @@ class SupabaseDatabaseManager:
             print(f"Error reversing invoice: {e}")
             return False
 
+    def get_invoice_items(self, invoice_id: str) -> List[Dict]:
+        """Get items for a specific invoice."""
+        try:
+            result = (
+                self.supabase.table("bill_items")
+                .select("*")
+                .eq("bill_id", invoice_id)
+                .execute()
+            )
+            return result.data or []
+        except Exception as e:
+            print(f"Error getting invoice items: {e}")
+            return []
+
     # Stock movements
     def get_stock_movements(
         self, product_id: str = None, limit: int = 200
@@ -739,6 +753,42 @@ class SupabaseDatabaseManager:
             else:
                 total_items = 0
 
+            # Get top selling items
+            top_items = []
+            if bills:
+                bill_ids = [bill["id"] for bill in bills]
+                items_result = (
+                    self.supabase.table("bill_items")
+                    .select("description, quantity, unit_price")
+                    .in_("bill_id", bill_ids)
+                    .execute()
+                )
+
+                # Group by description and sum quantities/revenue
+                item_summary = {}
+                for item in items_result.data or []:
+                    desc = item["description"]
+                    qty = float(item.get("quantity", 0))
+                    price = float(item.get("unit_price", 0))
+                    revenue = qty * price
+
+                    if desc in item_summary:
+                        item_summary[desc]["total_sold"] += qty
+                        item_summary[desc]["total_revenue"] += revenue
+                    else:
+                        item_summary[desc] = {
+                            "description": desc,
+                            "total_sold": qty,
+                            "total_revenue": revenue,
+                        }
+
+                # Sort by revenue and take top 10
+                top_items = sorted(
+                    item_summary.values(),
+                    key=lambda x: x["total_revenue"],
+                    reverse=True,
+                )[:10]
+
             return {
                 "total_sales": total_sales,
                 "total_invoices": total_bills,
@@ -746,6 +796,9 @@ class SupabaseDatabaseManager:
                 "average_invoice_value": (
                     total_sales / total_bills if total_bills > 0 else 0
                 ),
+                "average_sale": (total_sales / total_bills if total_bills > 0 else 0),
+                "invoice_count": total_bills,
+                "top_items": top_items,
             }
 
         except Exception as e:

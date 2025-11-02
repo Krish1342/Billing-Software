@@ -58,7 +58,13 @@ class UnifiedJewelryApp(QMainWindow):
                 "gstin": "22ABCDE1234F1Z5",
             },
             "tax": {"cgst_rate": 1.5, "sgst_rate": 1.5},
-            "invoice": {"prefix": "RK", "start_number": 1001},
+            "invoice": {
+                "prefix": "RK",
+                "start_number": 1001,
+                "default_save_path": "invoices",
+                "show_success_dialog": False,
+                "require_confirmation": False,
+            },
         }
 
     def save_settings(self):
@@ -173,7 +179,7 @@ class UnifiedJewelryApp(QMainWindow):
         self.status_bar.addPermanentWidget(self.db_status_label)
 
     def create_menu_bar(self):
-        """Create menu bar."""
+        """Create menu bar with keyboard shortcuts."""
         menubar = self.menuBar()
 
         # File menu
@@ -181,18 +187,60 @@ class UnifiedJewelryApp(QMainWindow):
 
         new_invoice_action = QAction("&New Invoice", self)
         new_invoice_action.setShortcut("Ctrl+N")
+        new_invoice_action.setToolTip("Create new invoice (Ctrl+N)")
         new_invoice_action.triggered.connect(self.new_invoice)
         file_menu.addAction(new_invoice_action)
+
+        # Add more shortcuts
+        focus_customer_action = QAction("Focus &Customer Field", self)
+        focus_customer_action.setShortcut("Ctrl+Shift+C")
+        focus_customer_action.setToolTip("Focus customer name field (Ctrl+Shift+C)")
+        focus_customer_action.triggered.connect(self.focus_customer_field)
+        file_menu.addAction(focus_customer_action)
 
         file_menu.addSeparator()
 
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
+        exit_action.setToolTip("Exit application (Ctrl+Q)")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # View menu
+        view_menu = menubar.addMenu("&View")
+
+        billing_action = QAction("&Billing", self)
+        billing_action.setShortcut("Ctrl+1")
+        billing_action.setToolTip("Switch to Billing tab (Ctrl+1)")
+        billing_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
+        view_menu.addAction(billing_action)
+
+        stock_action = QAction("&Stock", self)
+        stock_action.setShortcut("Ctrl+2")
+        stock_action.setToolTip("Switch to Stock tab (Ctrl+2)")
+        stock_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        view_menu.addAction(stock_action)
+
+        analytics_action = QAction("&Analytics", self)
+        analytics_action.setShortcut("Ctrl+3")
+        analytics_action.setToolTip("Switch to Analytics tab (Ctrl+3)")
+        analytics_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(2))
+        view_menu.addAction(analytics_action)
+
+        settings_action = QAction("Se&ttings", self)
+        settings_action.setShortcut("Ctrl+4")
+        settings_action.setToolTip("Switch to Settings tab (Ctrl+4)")
+        settings_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(3))
+        view_menu.addAction(settings_action)
+
         # Help menu
         help_menu = menubar.addMenu("&Help")
+
+        shortcuts_action = QAction("&Keyboard Shortcuts", self)
+        shortcuts_action.setShortcut("F1")
+        shortcuts_action.setToolTip("Show keyboard shortcuts (F1)")
+        shortcuts_action.triggered.connect(self.show_shortcuts)
+        help_menu.addAction(shortcuts_action)
 
         about_action = QAction("&About", self)
         about_action.triggered.connect(self.show_about)
@@ -290,9 +338,60 @@ class UnifiedJewelryApp(QMainWindow):
         <li>Complete inventory management</li>
         <li>Sales analytics and reporting</li>
         <li>Customer and supplier management</li>
+        <li>Keyboard navigation and shortcuts</li>
+        <li>Double confirmation for critical operations</li>
         </ul>
         """
         QMessageBox.about(self, "About", about_text)
+
+    def focus_customer_field(self):
+        """Focus customer field in billing tab."""
+        self.tab_widget.setCurrentIndex(0)  # Switch to billing tab
+        if hasattr(self.billing_tab, "customer_name_edit"):
+            self.billing_tab.customer_name_edit.setFocus()
+            self.billing_tab.customer_name_edit.selectAll()
+
+    def show_shortcuts(self):
+        """Show keyboard shortcuts dialog."""
+        shortcuts_text = """
+        <h2>Keyboard Shortcuts</h2>
+        <h3>Global Shortcuts:</h3>
+        <ul>
+        <li><b>Ctrl+N</b> - New Invoice</li>
+        <li><b>Ctrl+Q</b> - Exit Application</li>
+        <li><b>Ctrl+Shift+C</b> - Focus Customer Field</li>
+        <li><b>F1</b> - Show This Help</li>
+        </ul>
+        
+        <h3>Tab Navigation:</h3>
+        <ul>
+        <li><b>Ctrl+1</b> - Billing Tab</li>
+        <li><b>Ctrl+2</b> - Stock Management Tab</li>
+        <li><b>Ctrl+3</b> - Analytics Tab</li>
+        <li><b>Ctrl+4</b> - Settings Tab</li>
+        </ul>
+        
+        <h3>Field Navigation:</h3>
+        <ul>
+        <li><b>Enter</b> - Move to next field</li>
+        <li><b>Tab</b> - Standard tab navigation</li>
+        </ul>
+        
+        <h3>Actions:</h3>
+        <ul>
+        <li><b>Enter</b> in Amount field - Add item to invoice</li>
+        <li><b>Enter</b> in Override Total field - Generate invoice</li>
+        <li><b>Enter</b> in Supplier field (Stock) - Add product</li>
+        </ul>
+        
+        <p><b>Note:</b> Critical operations require double confirmation for safety.</p>
+        """
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Keyboard Shortcuts")
+        msg.setText(shortcuts_text)
+        msg.setTextFormat(msg.RichText)
+        msg.exec_()
 
     def closeEvent(self, event):
         """Handle application close event."""
