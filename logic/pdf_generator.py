@@ -68,8 +68,8 @@ class InvoicePDFGenerator:
         y_pos = content_top
         y_pos = self._draw_company_header(c, content_left, content_right, y_pos)
 
-        # Tax Invoice title (centered with enhanced styling)
-        y_pos -= 20 * mm
+        # Tax Invoice title (centered with enhanced styling) - moved down more
+        y_pos -= 25 * mm  # Increased spacing from 20mm to 25mm
 
         # Draw enhanced background box for TAX INVOICE (clamped to inner width)
         title_text = "TAX INVOICE"
@@ -123,14 +123,14 @@ class InvoicePDFGenerator:
         # Reset color to black for rest of content
         c.setFillColor(colors.black)
 
-        # Invoice details box
-        y_pos -= 10 * mm
+        # Invoice details box - more spacing from TAX INVOICE title
+        y_pos -= 12 * mm  # Increased from 10mm to 12mm
         y_pos = self._draw_invoice_details_box(
             c, content_left, content_right, y_pos, invoice_data
         )
 
-        # Items table - keep it within inner content and above footer area
-        y_pos -= 5 * mm
+        # Items table - keep it within inner content and above footer area - more spacing
+        y_pos -= 8 * mm  # Increased from 5mm to 8mm
         footer_reserved_h = 35 * mm  # reserved space for footer/signature
         bottom_limit = max(content_bottom, margin_bottom + 8 * mm) + footer_reserved_h
         y_pos = self._draw_items_table(
@@ -204,58 +204,74 @@ class InvoicePDFGenerator:
         return (x1 + offset2, y1 + offset2, x2 - offset2, y2 - offset2)
 
     def _draw_company_header(self, c, x1, x2, y_start):
-        """Draw company header details with styling - now horizontal at top."""
-        y = y_start
+        """Draw company header details with enhanced styling and professional look."""
+        y = y_start - 15 * mm 
 
-        # Company name in dark red - centered and MUCH larger
-        c.setFont("Helvetica-Bold", 24)
-        c.setFillColor(colors.HexColor("#8B0000"))
+        # Company name with shadow effect for depth
+        c.setFont("Helvetica-Bold", 26)  # Even larger for prominence
         company_name = self.company["name"]
+        
+        # Shadow
+        c.setFillColor(colors.HexColor("#660000"))
+        c.drawCentredString((x1 + x2) / 2 + 0.5 * mm, y - 0.5 * mm, company_name)
+        
+        # Main text in rich maroon
+        c.setFillColor(colors.HexColor("#8B0000"))
         c.drawCentredString((x1 + x2) / 2, y, company_name)
 
-        # Decorative line under company name - longer and more prominent
+        # Enhanced decorative line with gradient effect (double line)
+        y -= 4 * mm
         c.setStrokeColor(colors.HexColor("#FFD700"))
-        c.setLineWidth(2.0)
+        c.setLineWidth(2.5)
         line_center = (x1 + x2) / 2
-        line_width = 120 * mm
+        line_width = 130 * mm
         c.line(
             line_center - line_width / 2,
-            y - 3 * mm,
+            y,
             line_center + line_width / 2,
-            y - 3 * mm,
+            y,
+        )
+        
+        # Thinner gold line below for elegance
+        c.setLineWidth(1.0)
+        c.line(
+            line_center - line_width / 2,
+            y - 1.5 * mm,
+            line_center + line_width / 2,
+            y - 1.5 * mm,
         )
 
-        y -= 10 * mm
-        c.setFont("Helvetica", 10)
+        y -= 8 * mm
+        c.setFont("Helvetica", 11)  # Slightly larger for better readability
         c.setFillColor(colors.black)
-        # Use 'address' field from settings
         address_text = self.company.get("address", "")
         if address_text:
             c.drawCentredString((x1 + x2) / 2, y, address_text)
 
-        y -= 5 * mm
+        y -= 6 * mm  # Better spacing
+        c.setFont("Helvetica", 10)
         contact_text = (
-            f"Phone: {self.company['phone']} | Email: {self.company['email']}"
+            f"📞 {self.company['phone']}  |  📧 {self.company['email']}"
         )
         c.drawCentredString((x1 + x2) / 2, y, contact_text)
 
-        # GSTIN below contact info
-        y -= 5 * mm
-        c.setFont("Helvetica-Bold", 10)
+        # GSTIN with enhanced visibility
+        y -= 6 * mm
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(colors.HexColor("#8B0000"))
         gstin_text = f"GSTIN: {self.company['gstin']}"
         c.drawCentredString((x1 + x2) / 2, y, gstin_text)
 
-        return y - 8 * mm
+        return y - 10 * mm  # More breathing space before next section
 
     def _draw_invoice_details_box(self, c, x1, x2, y_start, invoice_data):
-        """Draw invoice number, date, and customer details box with enhanced styling."""
-        box_height = 38 * mm  # Slightly taller
+        """Draw invoice number, date, and customer details box with enhanced professional styling."""
+        box_height = 42 * mm  # Taller for better content spacing
         y_bottom = y_start - box_height
 
-        # Enhanced box with shadow effect
-        shadow_offset = 0.5 * mm
-        c.setFillColor(colors.HexColor("#E0E0E0"))  # Light gray shadow
+        # Professional shadow effect
+        shadow_offset = 1.0 * mm
+        c.setFillColor(colors.HexColor("#D0D0D0"))  # Darker shadow
         c.rect(
             x1 + shadow_offset,
             y_bottom - shadow_offset,
@@ -265,82 +281,95 @@ class InvoicePDFGenerator:
             stroke=0,
         )
 
-        # Draw main box with colored border
+        # Draw main box with thicker border
         c.setStrokeColor(colors.HexColor("#8B0000"))
-        c.setLineWidth(1.5)
+        c.setLineWidth(2.0)
         c.rect(x1, y_bottom, x2 - x1, box_height, fill=0, stroke=1)
 
         # Vertical divider (between invoice details and customer details)
-        mid_x = x1 + (x2 - x1) * 0.35
+        mid_x = x1 + (x2 - x1) * 0.36
         c.setStrokeColor(colors.HexColor("#FFD700"))
-        c.setLineWidth(1.5)
+        c.setLineWidth(2.0)
         c.line(mid_x, y_bottom, mid_x, y_start)
 
-        # Left side: Invoice details with enhanced background
-        c.setFillColor(colors.HexColor("#FFF8DC"))  # Cornsilk
+        # Left side: Invoice details with elegant background
+        c.setFillColor(colors.HexColor("#FFFACD"))  # Lemon chiffon
         c.rect(x1, y_bottom, mid_x - x1, box_height, fill=1, stroke=0)
 
-        # Right side: Customer details with white background
+        # Right side: Customer details with clean white background
         c.setFillColor(colors.white)
         c.rect(mid_x, y_bottom, x2 - mid_x, box_height, fill=1, stroke=0)
 
-        # Redraw enhanced borders
+        # Redraw enhanced borders on top
         c.setStrokeColor(colors.HexColor("#8B0000"))
-        c.setLineWidth(1.5)
+        c.setLineWidth(2.0)
         c.rect(x1, y_bottom, x2 - x1, box_height, fill=0, stroke=1)
         c.setStrokeColor(colors.HexColor("#FFD700"))
+        c.setLineWidth(2.0)
         c.line(mid_x, y_bottom, mid_x, y_start)
 
-        # Left side: Invoice details with better spacing
-        y = y_start - 6 * mm
-        c.setFont("Helvetica-Bold", 10)
+        # Left side: Invoice details with improved spacing and alignment
+        y = y_start - 8 * mm
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(x1 + 4 * mm, y, "No.:")
+        c.drawString(x1 + 5 * mm, y, "Invoice No:")
         c.setFillColor(colors.black)
-        c.setFont("Helvetica", 10)
-        c.drawString(x1 + 18 * mm, y, invoice_data.get("invoice_number", ""))
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(x1 + 28 * mm, y, invoice_data.get("invoice_number", ""))
 
-        y -= 6 * mm
-        c.setFont("Helvetica-Bold", 10)
+        y -= 8 * mm
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(x1 + 4 * mm, y, "Date:")
+        c.drawString(x1 + 5 * mm, y, "Date:")
         c.setFillColor(colors.black)
-        c.setFont("Helvetica", 10)
-        c.drawString(x1 + 18 * mm, y, invoice_data.get("invoice_date", ""))
+        c.setFont("Helvetica", 11)
+        c.drawString(x1 + 28 * mm, y, invoice_data.get("invoice_date", ""))
 
-        # Right side: Customer details with better spacing
-        y = y_start - 6 * mm
-        c.setFont("Helvetica-Bold", 10)
+        # Right side: Customer details with improved layout
+        y = y_start - 8 * mm
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(mid_x + 4 * mm, y, "Name:")
+        c.drawString(mid_x + 5 * mm, y, "Customer:")
         c.setFillColor(colors.black)
-        c.setFont("Helvetica", 10)
-        c.drawString(mid_x + 20 * mm, y, invoice_data.get("customer_name", ""))
+        c.setFont("Helvetica-Bold", 11)
+        customer_name = invoice_data.get("customer_name", "")
+        # Truncate if too long
+        if len(customer_name) > 30:
+            customer_name = customer_name[:27] + "..."
+        c.drawString(mid_x + 25 * mm, y, customer_name)
 
-        y -= 6 * mm
+        y -= 8 * mm
         c.setFont("Helvetica-Bold", 10)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(mid_x + 4 * mm, y, "Address:")
+        c.drawString(mid_x + 5 * mm, y, "Phone:")
         c.setFillColor(colors.black)
         c.setFont("Helvetica", 10)
-        # Better address wrapping
+        phone = invoice_data.get("customer_phone", "")
+        if phone:
+            c.drawString(mid_x + 25 * mm, y, phone)
+
+        y -= 7 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColor(colors.HexColor("#8B0000"))
+        c.drawString(mid_x + 5 * mm, y, "Address:")
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 9)
+        # Better address wrapping with word breaks
         address = invoice_data.get("customer_address", "")
-        if len(address) > 35:
-            c.drawString(mid_x + 20 * mm, y, address[:35])
-            y -= 5 * mm
-            c.drawString(mid_x + 20 * mm, y, address[35:])
-        else:
-            c.drawString(mid_x + 20 * mm, y, address)
+        if address:
+            max_chars = 40
+            if len(address) > max_chars:
+                # Find last space before max_chars
+                split_at = address[:max_chars].rfind(' ')
+                if split_at == -1:
+                    split_at = max_chars
+                c.drawString(mid_x + 25 * mm, y, address[:split_at])
+                y -= 5 * mm
+                c.drawString(mid_x + 25 * mm, y, address[split_at:split_at+max_chars].strip())
+            else:
+                c.drawString(mid_x + 25 * mm, y, address)
 
-        y -= 6 * mm
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(mid_x + 4 * mm, y, "Phone:")
-        c.setFillColor(colors.black)
-        c.setFont("Helvetica", 10)
-        c.drawString(mid_x + 20 * mm, y, invoice_data.get("customer_phone", ""))
-
-        return y_bottom - 5 * mm
+        return y_bottom - 6 * mm
 
     def _draw_items_table(
         self, c, x1, x2, y_start, line_items, invoice_data, bottom_limit
@@ -366,14 +395,14 @@ class InvoicePDFGenerator:
         # Prepare table data with size awareness
         table_data: List[List[str]] = []
 
-        # Header row with better formatting
+        # Header row with better formatting - simplified to fit
         headers = [
             "S.No.",
             "Description",
             "HSN Code",
-            "Weight",
-            "Rate\n(with making charges)",
-            "Amount",
+            "Weight (g)",
+            "Rate (₹/g)",
+            "Amount (₹)",
         ]
         table_data.append(headers)
 
@@ -400,12 +429,11 @@ class InvoicePDFGenerator:
             if available_for_data < 1:
                 available_for_data = 1
 
-        # Build data rows (truncate if necessary)
-        items_to_show = line_items[:available_for_data]
-        for idx, item in enumerate(items_to_show, start=1):
+        # Build data rows - only show actual items (no empty filler rows)
+        for idx, item in enumerate(line_items, start=1):
             description = item.get("description", "")
-            if len(description) > 40:
-                description = description[:37] + "..."
+            if len(description) > 45:
+                description = description[:42] + "..."
             row = [
                 str(idx),
                 description,
@@ -416,23 +444,7 @@ class InvoicePDFGenerator:
             ]
             table_data.append(row)
 
-        # If there are more items than can be shown, add a summary row
-        remaining = max(0, len(line_items) - len(items_to_show))
-        if remaining > 0 and len(table_data) < max_rows_total - totals_rows_count:
-            table_data.append(
-                [
-                    "",
-                    f"+{remaining} more item(s)",
-                    "",
-                    "",
-                    "",
-                    "",
-                ]
-            )
-
-        # Fill remaining space with empty rows so totals align at bottom
-        while len(table_data) < max_rows_total - totals_rows_count:
-            table_data.append(["", "", "", "", "", ""])
+        # No empty filler rows - table will be as tall as needed for actual items
 
         # Append totals rows at the end
         table_data.append(["", "", "", "", "TOTAL", f"₹{float(subtotal):.2f}"])
@@ -463,8 +475,8 @@ class InvoicePDFGenerator:
         table_data.append(["", "", "", "", "G.TOTAL", f"₹{float(final_total):.2f}"])
 
         # Dynamic column widths to fit inner_width precisely
-        # Percentages sum to 1.0
-        col_perc = [0.07, 0.37, 0.12, 0.12, 0.16, 0.16]
+        # Adjusted percentages: reduced Description, increased Rate column
+        col_perc = [0.06, 0.32, 0.10, 0.12, 0.18, 0.22]  # Rate gets more space
         col_widths = [inner_width * p for p in col_perc]
 
         # Create and style table
@@ -475,66 +487,71 @@ class InvoicePDFGenerator:
         totals_start = len(table_data) - num_totals_rows
 
         # Enhanced table styling (reduced font sizes as requested)
-        style = TableStyle(
-            [
-                # Header row with enhanced styling
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8B0000")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 9),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
-                # Data rows with better spacing
-                ("FONTNAME", (0, 1), (-1, totals_start - 1), "Helvetica"),
-                ("FONTSIZE", (0, 1), (-1, totals_start - 1), 8),
-                ("ALIGN", (0, 1), (0, totals_start - 1), "CENTER"),  # S.No. column
-                ("ALIGN", (1, 1), (1, totals_start - 1), "LEFT"),  # Description column
-                ("ALIGN", (2, 1), (2, totals_start - 1), "CENTER"),  # HSN
-                ("ALIGN", (3, 1), (3, totals_start - 1), "CENTER"),  # Weight
-                ("ALIGN", (4, 1), (4, totals_start - 1), "RIGHT"),  # Rate
-                ("ALIGN", (5, 1), (5, totals_start - 1), "RIGHT"),  # Amount
-                # Alternating row colors for better readability
-                ("BACKGROUND", (0, 1), (-1, totals_start - 1), colors.white),
-                ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#F8F8F8")),
-                ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor("#F8F8F8")),
-                ("BACKGROUND", (0, 6), (-1, 6), colors.HexColor("#F8F8F8")),
-                ("BACKGROUND", (0, 8), (-1, 8), colors.HexColor("#F8F8F8")),
-                # Totals rows with enhanced styling
-                (
-                    "BACKGROUND",
-                    (0, totals_start),
-                    (-1, -2),
-                    colors.HexColor("#FFF8DC"),
-                ),  # Light cream
-                (
-                    "BACKGROUND",
-                    (0, -1),
-                    (-1, -1),
-                    colors.HexColor("#FFD700"),
-                ),  # Gold for G.TOTAL
-                ("FONTNAME", (0, totals_start), (-1, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, totals_start), (-1, -1), 9),
-                ("ALIGN", (4, totals_start), (4, -1), "RIGHT"),
-                ("ALIGN", (5, totals_start), (5, -1), "RIGHT"),
-                # Grid and borders
-                ("GRID", (0, 0), (-1, -1), 1.0, colors.HexColor("#8B0000")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                # Emphasized borders
-                (
-                    "LINEABOVE",
-                    (0, totals_start),
-                    (-1, totals_start),
-                    2,
-                    colors.HexColor("#8B0000"),
-                ),
-                ("LINEABOVE", (0, -1), (-1, -1), 3, colors.HexColor("#8B0000")),
-                ("LINEBELOW", (0, -1), (-1, -1), 3, colors.HexColor("#8B0000")),
-            ]
-        )
+        style_list = [
+            # Header row with enhanced styling
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8B0000")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+            # Data rows with better spacing
+            ("FONTNAME", (0, 1), (-1, totals_start - 1), "Helvetica"),
+            ("FONTSIZE", (0, 1), (-1, totals_start - 1), 8),
+            ("ALIGN", (0, 1), (0, totals_start - 1), "CENTER"),  # S.No. column
+            ("ALIGN", (1, 1), (1, totals_start - 1), "LEFT"),  # Description column
+            ("ALIGN", (2, 1), (2, totals_start - 1), "CENTER"),  # HSN
+            ("ALIGN", (3, 1), (3, totals_start - 1), "CENTER"),  # Weight
+            ("ALIGN", (4, 1), (4, totals_start - 1), "RIGHT"),  # Rate
+            ("ALIGN", (5, 1), (5, totals_start - 1), "RIGHT"),  # Amount
+            # Alternating row colors for better readability
+            ("BACKGROUND", (0, 1), (-1, totals_start - 1), colors.white),
+        ]
+        
+        # Add alternating row colors only for rows that exist
+        for row_idx in range(2, totals_start, 2):
+            if row_idx < totals_start:
+                style_list.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#F8F8F8")))
+        
+        # Add remaining styles
+        style_list.extend([
+            # Totals rows with enhanced styling
+            (
+                "BACKGROUND",
+                (0, totals_start),
+                (-1, -2),
+                colors.HexColor("#FFF8DC"),
+            ),  # Light cream
+            (
+                "BACKGROUND",
+                (0, -1),
+                (-1, -1),
+                colors.HexColor("#FFD700"),
+            ),  # Gold for G.TOTAL
+            ("FONTNAME", (0, totals_start), (-1, -1), "Helvetica-Bold"),
+            ("FONTSIZE", (0, totals_start), (-1, -1), 9),
+            ("ALIGN", (4, totals_start), (4, -1), "RIGHT"),
+            ("ALIGN", (5, totals_start), (5, -1), "RIGHT"),
+            # Grid and borders
+            ("GRID", (0, 0), (-1, -1), 1.0, colors.HexColor("#8B0000")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            # Emphasized borders
+            (
+                "LINEABOVE",
+                (0, totals_start),
+                (-1, totals_start),
+                2,
+                colors.HexColor("#8B0000"),
+            ),
+            ("LINEABOVE", (0, -1), (-1, -1), 3, colors.HexColor("#8B0000")),
+            ("LINEBELOW", (0, -1), (-1, -1), 3, colors.HexColor("#8B0000")),
+        ])
+        
+        style = TableStyle(style_list)
 
         table.setStyle(style)
 
@@ -553,53 +570,65 @@ class InvoicePDFGenerator:
         return table_y - 8 * mm
 
     def _draw_footer(self, c, x1, x2, y, invoice_data):
-        """Draw enhanced footer with professional signature area."""
-        # Thank you message on the left
-        c.setFont("Helvetica-Oblique", 10)
+        """Draw enhanced footer with professional signature area and terms."""
+        # Thank you message with icon
+        c.setFont("Helvetica-BoldOblique", 11)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(x1, y + 20 * mm, "Thank you for your business!")
+        c.drawString(x1, y + 22 * mm, "✓ Thank you for your valued business!")
 
-        # Terms note
+        # Terms and conditions
         c.setFont("Helvetica", 8)
-        c.setFillColor(colors.black)
+        c.setFillColor(colors.HexColor("#555555"))
         c.drawString(
             x1,
-            y + 15 * mm,
-            "• All items sold are subject to company terms and conditions",
+            y + 16 * mm,
+            "• All items sold are subject to our terms and conditions",
         )
         c.drawString(
-            x1, y + 12 * mm, "• Goods once sold will not be taken back or exchanged"
+            x1, y + 13 * mm, "• Goods once sold will not be taken back or exchanged"
+        )
+        c.drawString(
+            x1, y + 10 * mm, "• Please verify all details before leaving the store"
         )
 
-        # Enhanced signature section on the right
-        signature_x = x2 - 60 * mm
+        # Professional signature section on the right
+        signature_x = x2 - 65 * mm  # Slightly more space
 
-        # "For Roopkala Jewellers" text with styling
-        c.setFont("Helvetica-Bold", 11)
+        # "For Roopkala Jewellers" in a single line with better spacing
+        c.setFont("Helvetica-Bold", 10)
         c.setFillColor(colors.HexColor("#8B0000"))
-        c.drawString(signature_x, y + 20 * mm, "For Roopkala Jewellers")
+        c.drawString(signature_x, y + 25 * mm, "For Roopkala Jewellers")
 
-        # Signature box
-        box_width = 50 * mm
-        box_height = 15 * mm
+        # Enhanced signature box with double border - more separation
+        box_width = 58 * mm  # Slightly wider
+        box_height = 18 * mm  # Slightly taller
+        box_y = y + 4 * mm  # Same position
+        
+        # Outer border (dark)
         c.setStrokeColor(colors.HexColor("#8B0000"))
-        c.setLineWidth(1.0)
-        c.rect(signature_x, y + 5 * mm, box_width, box_height, fill=0, stroke=1)
+        c.setLineWidth(1.5)
+        c.rect(signature_x, box_y, box_width, box_height, fill=0, stroke=1)
+        
+        # Inner border for elegance
+        c.setStrokeColor(colors.HexColor("#FFD700"))
+        c.setLineWidth(0.8)
+        c.rect(signature_x + 1 * mm, box_y + 1 * mm, box_width - 2 * mm, box_height - 2 * mm, fill=0, stroke=1)
 
         # Signature line inside box
+        c.setStrokeColor(colors.black)
         c.setLineWidth(0.5)
         c.line(
             signature_x + 5 * mm,
-            y + 8 * mm,
+            box_y + 10 * mm,
             signature_x + box_width - 5 * mm,
-            y + 8 * mm,
+            box_y + 10 * mm,
         )
 
-        # Label
-        c.setFont("Helvetica", 9)
+        # Label below signature line
+        c.setFont("Helvetica-Bold", 9)
         c.setFillColor(colors.black)
         c.drawCentredString(
-            signature_x + box_width / 2, y + 2 * mm, "Authorized Signatory"
+            signature_x + box_width / 2, box_y + 6 * mm, "Authorized Signatory"
         )
 
     def _format_decimal(self, value: str, decimals: int = 2) -> str:

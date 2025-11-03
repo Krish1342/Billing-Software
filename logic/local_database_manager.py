@@ -787,16 +787,16 @@ class LocalDatabaseManager:
             )
             total_items = cur2.fetchone()[0] or 0
 
-            # Top items aggregated by description (fallback to product_name)
+            # Top items aggregated by description
             cur3 = conn.execute(
                 f"""
                 SELECT 
-                    COALESCE(NULLIF(description, ''), product_name) AS item_desc,
+                    description AS item_desc,
                     COUNT(*) AS total_sold,
                     COALESCE(SUM(amount), 0) AS total_revenue
                 FROM bill_items
                 WHERE bill_id IN ({placeholders})
-                GROUP BY item_desc
+                GROUP BY description
                 ORDER BY total_sold DESC, total_revenue DESC
                 LIMIT 20
                 """,

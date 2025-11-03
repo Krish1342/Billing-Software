@@ -39,8 +39,26 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# PDFs generated
+# PDFs and generated files
 invoices/*.pdf
+labels/*.pdf
+*.pdf
+
+# Environment and config
 .env
+
 # Logs
 *.log
+
+# Test files
+test_*/
+examples/
+
+# Test artifacts (but keep the tests/ directory in repo)
+tests/*.db
+tests/*.pdf
+tests/__pycache__/
+
+# Executable builds
+*.exe
+*.spec

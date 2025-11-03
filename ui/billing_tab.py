@@ -190,15 +190,17 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         # Add item form
         add_form = QFrame()
         add_form.setFrameStyle(QFrame.StyledPanel)
-        # Keep the form readable and separate from the table
-        add_form.setMinimumHeight(170)
+        # Increased height to accommodate the larger button with plenty of space
+        add_form.setMinimumHeight(260)
         add_form.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         add_layout = QGridLayout(add_form)
-        add_layout.setContentsMargins(8, 8, 4, 4)
-        add_layout.setVerticalSpacing(8)
+        add_layout.setContentsMargins(10, 10, 10, 15)
+        add_layout.setVerticalSpacing(10)
         # Prevent row compression when maximizing
-        for r in range(0, 6):
-            add_layout.setRowMinimumHeight(r, 30)
+        for r in range(0, 5):
+            add_layout.setRowMinimumHeight(r, 32)
+        # Give extra space for the button row
+        add_layout.setRowMinimumHeight(5, 60)
 
         # Row 0: Custom order toggle
         self.custom_order_check = QCheckBox("Custom Order (not in stock)")
@@ -238,7 +240,7 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         self.weight_label = QLabel("Weight (g):")
         self.net_weight_spin = QDoubleSpinBox()
         self.net_weight_spin.setDecimals(3)
-        self.net_weight_spin.setRange(0.001, 999999.999)
+        self.net_weight_spin.setRange(0.001, 9999999.999)
         self.net_weight_spin.setValue(1.000)
         self.net_weight_spin.setToolTip("Enter the net weight in grams")
         self.net_weight_spin.setMinimumHeight(30)
@@ -278,7 +280,7 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         add_layout.addWidget(QLabel("Rate:"), 4, 0)
         self.rate_spin = QDoubleSpinBox()
         self.rate_spin.setDecimals(2)
-        self.rate_spin.setRange(0.0, 999999.99)
+        self.rate_spin.setRange(0.0, 9999999.99)
         self.rate_spin.valueChanged.connect(self.calculate_line_total)
         self.rate_spin.setMinimumHeight(30)
         self.rate_spin.setSizePolicy(
@@ -291,7 +293,7 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         add_layout.addWidget(QLabel("Amount:"), 4, 2)
         self.amount_spin = QDoubleSpinBox()
         self.amount_spin.setDecimals(2)
-        self.amount_spin.setRange(0.0, 999999.99)
+        self.amount_spin.setRange(0.0, 9999999.99)
         self.amount_spin.valueChanged.connect(self.calculate_from_amount)
         self.amount_spin.setMinimumHeight(30)
         self.amount_spin.setSizePolicy(
@@ -300,20 +302,38 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         )
         add_layout.addWidget(self.amount_spin, 4, 3)
 
-        # Add button
-        self.add_item_btn = QPushButton("Add Item")
+        # Add button with enhanced styling
+        self.add_item_btn = QPushButton("➕ Add Item to Invoice")
         self.add_item_btn.clicked.connect(self.add_line_item)
         self.add_item_btn.setToolTip(
             create_shortcut_tooltip(
                 "Add item to invoice", "Enter (when Amount field is focused)"
             )
         )
-        self.add_item_btn.setMinimumHeight(35)
+        self.add_item_btn.setMinimumHeight(40)
+        self.add_item_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2E7D32;
+                color: white;
+                font-weight: bold;
+                font-size: 12pt;
+                border: 2px solid #1B5E20;
+                border-radius: 5px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #388E3C;
+                border: 2px solid #2E7D32;
+            }
+            QPushButton:pressed {
+                background-color: #1B5E20;
+            }
+        """)
         add_layout.addWidget(self.add_item_btn, 5, 0, 1, 4)
 
         group_layout.addWidget(add_form)
-        # Nudge the table a bit lower so it doesn't visually touch the form
-        group_layout.addSpacing(6)
+        # Increased spacing to push the table further down
+        group_layout.addSpacing(25)
 
         # Line items table
         self.line_items_table = QTableWidget()
@@ -394,7 +414,7 @@ class BillingTab(QWidget, KeyboardNavigationMixin):
         group_layout.addWidget(QLabel("Override Total:"), 5, 0)
 
         self.override_total_spin = QDoubleSpinBox()
-        self.override_total_spin.setRange(0.0, 999999.99)
+        self.override_total_spin.setRange(0.0, 9999999.99)
         self.override_total_spin.setDecimals(2)
         self.override_total_spin.setPrefix("₹")
         self.override_total_spin.setEnabled(True)  # Always enabled

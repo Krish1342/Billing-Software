@@ -363,9 +363,12 @@ class AnalyticsTab(QWidget):
 
             # Calculate total items sold - use the correct field name
             total_items_sold = summary.get("total_items_sold", 0)
+            
+            # Get top items from summary
+            top_items = summary.get("top_items", [])
+            
             if total_items_sold == 0:
                 # Fallback: calculate from top_items if available
-                top_items = summary.get("top_items", [])
                 total_items_sold = sum(item.get("total_sold", 0) for item in top_items)
             self.total_items_sold_label.setText(f"Total Items Sold: {total_items_sold}")
 
